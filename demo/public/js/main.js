@@ -2,6 +2,11 @@
  * Demo app interactions — minimal, no framework.
  */
 (function init() {
+  if (typeof document === 'undefined') {
+    console.error('Document is not defined. This script should be run in a browser environment.');
+    return;
+  }
+
   const cta = document.getElementById('cta-primary');
   const status = document.getElementById('status-banner');
 
