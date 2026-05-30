@@ -20,6 +20,7 @@
     "run:e2e": "node bin/kiro-heal.js run",
     "demo": "node demo/server.js",
     "watch": "node bin/kiro-heal.js watch",
+    "watchdog": "node bin/watchdog.js",
     "scan": "node bin/kiro-heal.js scan",
     "github:serve": "node bin/kiro-heal.js github serve",
     "github:verify": "node bin/kiro-heal.js github verify",
