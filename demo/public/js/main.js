@@ -13,6 +13,6 @@
     status.dataset.state = 'success';
     cta.setAttribute('aria-pressed', 'true');
     cta.setAttribute('disabled', 'true'); // Disable the button after click
-    cta.removeEventListener('click', arguments.callee); // Remove event listener to prevent multiple clicks
+    status.style.display = 'block'; // Ensure the status banner is visible
   });
 })();
