@@ -1,0 +1,61 @@
+# Add to your repo as .github/workflows/kiro-heal-verify.yml
+# Triggers the kiro-heal GitHub App (repository_dispatch) or runs CLI in CI.
+
+name: Kiro Heal Verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to verify
+        required: false
+        default: ''
+  repository_dispatch:
+    types: [kiro-heal-verify]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  dispatch-to-bot:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger verification (hosted bot)
+        if: vars.KIRO_HEAL_WEBHOOK_URL != ''
+        run: |
+          curl -sf -X POST "${{ vars.KIRO_HEAL_WEBHOOK_URL }}/api/github/webhooks" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: repository_dispatch" \
+            -d '{"action":"kiro-heal-verify","repository":{"owner":{"login":"'"${{ github.repository_owner }}"'"},"name":"'"${{ github.event.repository.name || github.event.repository.name }}"'"},"installation":{"id":0}}'
+        continue-on-error: true
+
+  verify-cli:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/kiro-heal verify'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install kiro-heal
+        run: npm install -g . || npm link
+
+      - name: Install Kane CLI
+        run: npm install -g @testmuai/kane-cli
+
+      - name: Run local verification pipeline
+        env:
+          KIRO_HEAL_SIMULATE_KANE: ${{ secrets.KANE_CLI_TOKEN == '' && '1' || '0' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          node demo/server.js &
+          sleep 2
+          kiro-heal init --dir . --broken
+          kiro-heal run --dir .

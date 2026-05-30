@@ -1,0 +1,46 @@
+{
+  "name": "kiro-heal",
+  "version": "0.1.0",
+  "description": "Local self-healing + GitHub Auto-Verification Bot powered by Kane CLI",
+  "type": "module",
+  "bin": {
+    "kiro-heal": "./bin/kiro-heal.js"
+  },
+  "main": "./src/index.js",
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "docs"
+  ],
+  "scripts": {
+    "start": "node bin/kiro-heal.js start",
+    "dev": "node scripts/dev.mjs",
+    "init": "node bin/kiro-heal.js init",
+    "run:e2e": "node bin/kiro-heal.js run",
+    "demo": "node demo/server.js",
+    "watch": "node bin/kiro-heal.js watch",
+    "scan": "node bin/kiro-heal.js scan",
+    "github:serve": "node bin/kiro-heal.js github serve",
+    "github:verify": "node bin/kiro-heal.js github verify",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "kiro",
+    "kane-cli",
+    "self-healing",
+    "browser-testing"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/app": "^16.0.1",
+    "@octokit/rest": "^21.1.1",
+    "@octokit/webhooks": "^13.7.5",
+    "chokidar": "^4.0.3",
+    "clipanion": "^4.0.0-rc.4",
+    "ndjson": "^2.0.0"
+  }
+}

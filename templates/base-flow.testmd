@@ -1,0 +1,14 @@
+---
+mode: testing
+---
+
+# kiro-heal base smoke flow
+
+## Open application
+Open http://localhost:3000 and verify the page loads without a visible error overlay.
+
+## Check primary navigation
+Verify that a navigation element or main heading is visible on the page.
+
+## Interact with primary CTA
+Click the "Get started" button and verify the status message updates to confirm the interaction succeeded.
