@@ -181,18 +181,23 @@ export async function createSelfHealedPR({
 
   try {
     // 1. Get the base branch SHA
-    const { data: mainRef } = await octokit.git.getRef({
+    const { data: refs } = await octokit.git.listMatchingRefs({
       owner,
       repo,
       ref: `heads/${baseBranch}`,
     });
+    if (!refs.length) {
+      console.error(`[LoopVision] base branch "${baseBranch}" not found`);
+      return null;
+    }
+    const baseSha = refs[0].object.sha;
 
     // 2. Create a new branch for the fix
     await octokit.git.createRef({
       owner,
       repo,
       ref: `refs/heads/${branchName}`,
-      sha: mainRef.object.sha,
+      sha: baseSha,
     });
 
     // 3. Get the SHA of the file to update (if it exists)

@@ -70,7 +70,7 @@ class StartCommand extends Command {
   noWatch = Option.Boolean('--no-watch', { required: false });
 
   async execute() {
-    const repoRoot = repoRootFromdone(this.dir);
+    const repoRoot = repoRootFrom(this.dir);
     const { config, paths } = await loadProject(repoRoot);
     let serverChild = null;
 

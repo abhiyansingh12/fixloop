@@ -228,13 +228,18 @@ async function createPR(filePath, correctedCode, errorOutput) {
 
   try {
     // Get base branch SHA
-    const { data: mainRef } = await octokit.git.getRef({ owner, repo, ref: 'heads/main' });
+    const { data: refs } = await octokit.git.listMatchingRefs({ owner, repo, ref: 'heads/main' });
+    if (!refs.length) {
+      console.error('[watchdog] PR failed: main branch not found');
+      return null;
+    }
+    const baseSha = refs[0].object.sha;
 
     // Create branch
     await octokit.git.createRef({
       owner, repo,
       ref: `refs/heads/${branchName}`,
-      sha: mainRef.object.sha,
+      sha: baseSha,
     });
 
     // Get existing file SHA
