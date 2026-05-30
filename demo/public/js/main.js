@@ -12,7 +12,5 @@
       'Pipeline connected. Kane CLI can verify this interaction on the next run.';
     status.dataset.state = 'success';
     cta.setAttribute('aria-pressed', 'true');
-    cta.setAttribute('disabled', 'true'); // Disable the button after click
-    status.style.display = 'block'; // Ensure the status banner is visible
   });
 })();
