@@ -2,11 +2,6 @@
  * Demo app interactions — minimal, no framework.
  */
 (function init() {
-  if (typeof document === 'undefined') {
-    console.error('Document is not defined. This script should be run in a browser environment.');
-    return;
-  }
-
   const cta = document.getElementById('cta-primary');
   const status = document.getElementById('status-banner');
 
@@ -17,5 +12,7 @@
       'Pipeline connected. Kane CLI can verify this interaction on the next run.';
     status.dataset.state = 'success';
     cta.setAttribute('aria-pressed', 'true');
+    cta.setAttribute('disabled', 'true'); // Disable the button after click
+    cta.removeEventListener('click', arguments.callee); // Remove event listener to prevent multiple clicks
   });
 })();
