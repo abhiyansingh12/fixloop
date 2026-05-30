@@ -20,3 +20,10 @@ export {
   waitForHttp,
   loadProject,
 } from './pipeline.js';
+export {
+  validateFile,
+  checkSyntax,
+  checkRuntime,
+  healSyntaxError,
+  syntaxHealPipeline,
+} from './syntax-healer.js';

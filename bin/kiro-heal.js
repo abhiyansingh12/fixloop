@@ -22,6 +22,7 @@ import {
   assertWebhookServerReady,
   loadGitHubConfig,
 } from '../src/github/config.js';
+import { syntaxHealPipeline } from '../src/syntax-healer.js';
 
 const cli = new Cli({
   binaryLabel: 'kiro-heal',
@@ -225,6 +226,20 @@ class WatchCommand extends Command {
       if (/\.(tsx|jsx|ts|js|vue|svelte|html)$/i.test(abs)) {
         if (abs.includes('demo/public') || abs.includes('src/') || abs.includes('app/')) {
           lastChangedFile = abs;
+        }
+
+        // Immediate syntax/runtime validation on JS/TS files
+        if (/\.(js|ts|mjs|cjs)$/i.test(abs)) {
+          syntaxHealPipeline({ filePath: abs, repoRoot }).then((result) => {
+            if (result.healed) {
+              console.log(`[kiro-heal:syntax] auto-healed ${path.relative(repoRoot, abs)}`);
+              if (result.pr) {
+                console.log(`[kiro-heal:syntax] PR created: ${result.pr.html_url}`);
+              }
+            }
+          }).catch((err) => {
+            console.error(`[kiro-heal:syntax] error: ${err.message}`);
+          });
         }
       }
       schedule();
