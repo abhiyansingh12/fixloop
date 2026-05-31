@@ -8,11 +8,12 @@
   if (!cta || !status) return;
 
   cta.addEventListener('click', () => {
+    // Ensure the click handler updates the status correctly
     status.textContent =
       'Pipeline connected. Kane CLI can verify this interaction on the next run.';
     status.dataset.state = 'success';
     cta.setAttribute('aria-pressed', 'true');
     cta.setAttribute('disabled', 'true'); // Disable the button after click
-    status.style.display = 'block'; // Ensure the status banner is visible
+    cta.removeEventListener('click', arguments.callee); // Remove the click handler after execution
   });
 })();
