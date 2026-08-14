@@ -4,16 +4,16 @@ There is no compile step. The package is ESM JavaScript. `npm publish` packs `bi
 
 Do **not** put an npm token in the repo, in a workflow file, or in a chat. If a token was pasted anywhere, revoke it on npm (**Access Tokens → Delete**) and create a new one.
 
-## 1. First publish (your laptop)
+## 1. First publish — done
 
-GitHub Actions cannot complete the first publish if 2FA/passkey is required. Provenance attestations also only work on GitHub Actions — a laptop publish with `"provenance": true` fails with:
+[`fixloop@1.0.0`](https://www.npmjs.com/package/fixloop) is on npm (`abhiyansingh`).
 
-`Automatic provenance generation not supported for provider: null`
+That first publish was from a laptop with `--no-provenance` (provenance only works on GitHub Actions). Later versions should go out via GitHub Release so they get provenance.
 
-From a laptop, turn provenance off:
+Laptop publish (if you ever need it again):
 
 ```bash
-git checkout cursor/oss-hardening-5c25   # or main, after PR #26 is merged
+git checkout main
 git pull
 npm ci
 FIXLOOP_OPEN_PR=0 npm test
@@ -21,13 +21,7 @@ npm whoami                               # expect abhiyansingh
 npm publish --access public --no-provenance
 ```
 
-If a browser opens, complete **passkey** login. Do **not** pass `--otp=` unless you use a TOTP authenticator app.
-
-If you still see `provider: null`, you are on an old clone that still has `"provenance": true` in `package.json`. Pull this branch, or keep `--no-provenance`.
-
-GitHub Releases still publish **with** provenance via `.github/workflows/publish.yml`.
-
-Confirm: [https://www.npmjs.com/package/fixloop](https://www.npmjs.com/package/fixloop)
+If a browser opens, complete **passkey** login. Do **not** pass `--otp=` unless you use a TOTP authenticator app. Never reuse a version that is already on npm.
 
 ```bash
 npm install -g fixloop
@@ -37,7 +31,7 @@ npx fixloop --help
 ## 2. GitHub secret (later versions)
 
 1. npmjs.com → **Access Tokens** → new **granular** token
-   - Packages: **Read and write** (or only `fixloop` after it exists)
+   - Packages: **Read and write** (or only `fixloop`)
    - Organizations: **No access** (required if you have no orgs)
 2. GitHub repo **Settings → Secrets and variables → Actions → New repository secret**
    - Name: `NPM_TOKEN`
@@ -45,7 +39,7 @@ npx fixloop --help
 
 ## 3. Trusted Publisher (no OTP on CI)
 
-After the package exists on npm:
+The package is on npm. Wire Trusted Publisher so CI can publish without a one-time password:
 
 1. [npmjs.com/package/fixloop](https://www.npmjs.com/package/fixloop) → **Settings → Trusted Publisher**
 2. Add GitHub Actions:

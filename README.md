@@ -45,10 +45,7 @@ npm test
 Break the click handler in `examples/vite-app/src/main.js`, then from the repo root:
 
 ```bash
-```bash
 npm install -g fixloop
-# until 1.0.0 is on npm:
-# npm install github:abhiyansingh12/fixloop
 npx fixloop run --dir examples/vite-app --command "npx playwright test"
 ```
 
@@ -118,9 +115,9 @@ See [`.env.example`](.env.example). `FIXLOOP_*` is canonical; `KIRO_HEAL_*` is r
 
 ## Publish to npm
 
-Step-by-step: [docs/PUBLISH.md](docs/PUBLISH.md).
+[`fixloop@1.0.0`](https://www.npmjs.com/package/fixloop) is on npm.
 
-Short version: first publish from your laptop with `--otp=` (npm 2FA). Then add a **new** granular token as GitHub secret `NPM_TOKEN`, turn on Trusted Publisher for workflow `publish.yml`, and cut a GitHub Release (`v1.0.1`, …) to publish later versions.
+Later versions: [docs/PUBLISH.md](docs/PUBLISH.md). Add GitHub secret `NPM_TOKEN`, turn on Trusted Publisher for workflow `publish.yml`, then cut a GitHub Release (`v1.0.1`, …).
 
 ## License
 
