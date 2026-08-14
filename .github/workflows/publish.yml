@@ -74,4 +74,6 @@ jobs:
             echo "fixloop@${VERSION} is already on npm"
             exit 0
           fi
-          npm publish --access public --provenance
+          # Tests already ran above; skip prepublishOnly so npm 11
+          # pack --json notices cannot fail the publish step.
+          npm publish --access public --provenance --ignore-scripts

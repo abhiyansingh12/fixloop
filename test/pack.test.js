@@ -7,18 +7,49 @@ import path from 'node:path';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/** npm pack --json prints a value then "npm notice" lines on stdout. */
+function parseLeadingJson(text) {
+  const iObj = text.indexOf('{');
+  const iArr = text.indexOf('[');
+  let start = -1;
+  if (iArr < 0) start = iObj;
+  else if (iObj < 0) start = iArr;
+  else start = Math.min(iObj, iArr);
+  if (start < 0) {
+    throw new Error('npm pack --json produced no JSON');
+  }
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (c === '\\') escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === '{' || c === '[') depth += 1;
+    else if (c === '}' || c === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        return JSON.parse(text.slice(start, i + 1));
+      }
+    }
+  }
+  throw new Error('unterminated JSON from npm pack');
+}
+
 describe('npm pack', () => {
   it('ships the Action, CLI, and src — not maintainer docs or examples', () => {
     const out = execFileSync('npm', ['pack', '--dry-run', '--json'], {
       cwd: root,
-      encoding: 'utf8',
-      env: { ...process.env, npm_config_loglevel: 'error' }
+      encoding: 'utf8'
     });
-    const jsonStart = out.indexOf('[');
-    const jsonEnd = out.lastIndexOf(']');
-    assert.ok(jsonStart >= 0 && jsonEnd > jsonStart, 'npm pack --json should print an array');
-    const packed = JSON.parse(out.slice(jsonStart, jsonEnd + 1));
-    const files = packed[0].files.map((f) => f.path).sort();
+    const packed = parseLeadingJson(out);
+    const entry = Array.isArray(packed) ? packed[0] : packed;
+    const files = entry.files.map((f) => f.path).sort();
     assert.ok(files.includes('action.yml'));
     assert.ok(files.includes('bin/fixloop.js'));
     assert.ok(files.includes('src/pipeline.js'));
