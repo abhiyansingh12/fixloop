@@ -44,6 +44,17 @@ describe('triage', () => {
     assert.equal(t.label, 'flake');
   });
 
+  it('does not call a UI timeout a flake when the heal target is application code', () => {
+    const t = triageFailure(
+      fail({
+        message: 'Test timeout of 30000ms exceeded while waiting for expect(locator).toHaveURL',
+        title: 'primary CTA completes checkout',
+      }),
+      { healTarget: 'src/main.js' },
+    );
+    assert.equal(t.label, 'product_regression');
+  });
+
   it('labels flake when a retry later passed', () => {
     const t = triageFailure(fail({ passedOnRetry: true, message: 'net::ERR_CONNECTION_RESET' }));
     assert.equal(t.label, 'flake');

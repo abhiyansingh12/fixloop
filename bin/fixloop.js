@@ -21,6 +21,7 @@ import {
 import { loadEnvFile } from '../src/env.js';
 import { flagOn, flagString, parseArgv } from '../src/cli-args.js';
 import { watchTree } from '../src/watch-files.js';
+import { writeGithubOutput } from '../src/github-output.js';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -77,6 +78,15 @@ async function cmdInit(flags) {
   console.log(`[fixloop] oracle: ${config.oracle}`);
 }
 
+function emitOutcome(outcome) {
+  writeGithubOutput({
+    triage: outcome.triage?.label ?? '',
+    verified: Boolean(outcome.verified),
+    passed: Boolean(outcome.passed),
+    healed: Number(outcome.healCount ?? 0) > 0,
+  });
+}
+
 async function cmdRun(flags) {
   const repoRoot = repoRootFrom(flagString(flags, 'dir'));
   const config = await loadConfig(repoRoot);
@@ -88,6 +98,7 @@ async function cmdRun(flags) {
     enableHeal: !flagOn(flags, 'no-heal'),
     targetOverride: flagString(flags, 'target'),
   });
+  emitOutcome(outcome);
   process.exit(
     outcome.passed || outcome.triage?.label === 'test_defect' || outcome.triage?.label === 'flake' ? 0 : 1,
   );
@@ -106,6 +117,7 @@ async function cmdCi(flags) {
     enableHeal: true,
     issueNumber: process.env.FIXLOOP_ISSUE_NUMBER || process.env.GITHUB_PR_NUMBER,
   });
+  emitOutcome(outcome);
   if (outcome.triage?.label === 'test_defect') {
     console.log('[fixloop] update the test, I will not.');
     process.exit(0);

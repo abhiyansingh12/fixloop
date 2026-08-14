@@ -1,0 +1,30 @@
+name: Bug
+description: Something Fixloop did wrong (triage, heal, or PR)
+title: '[bug] '
+labels: [bug]
+body:
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What should have happened (triage label, no PR, draft PR, …)
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Repro
+      description: Command, `.fixloop.json`, and oracle output (redact tokens)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: fixloop version
+      placeholder: 1.0.1

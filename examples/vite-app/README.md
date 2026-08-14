@@ -1,6 +1,6 @@
 # Fixloop Vite + Playwright example
 
-This is the golden path: a real Vite app and a real Playwright spec.
+Golden path: a real Vite app and a real Playwright spec.
 
 ```bash
 cd examples/vite-app
@@ -9,8 +9,8 @@ npx playwright install chromium
 npm test
 ```
 
-To see Fixloop heal a product regression, break the click handler in `src/main.js`, then from the repo root:
+To see Fixloop heal a product regression, break the click handler in `src/main.js`, then from the **repository root**:
 
 ```bash
-npx fixloop run --cwd examples/vite-app --command "npx playwright test"
+npx fixloop run --dir examples/vite-app --command "npx playwright test"
 ```

@@ -8,6 +8,9 @@
     "kiro-heal": "bin/kiro-heal.js"
   },
   "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/abhiyansingh12/fixloop.git"
@@ -24,6 +27,7 @@
     "templates",
     "LICENSE",
     "README.md",
+    "CHANGELOG.md",
     "SECURITY.md"
   ],
   "scripts": {
@@ -38,6 +42,7 @@
     "github:serve": "node bin/fixloop.js github serve",
     "github:verify": "node bin/fixloop.js github verify",
     "test": "node --test test/*.test.js",
+    "lint": "node scripts/lint.mjs",
     "prepublishOnly": "npm test"
   },
   "engines": {

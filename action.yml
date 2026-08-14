@@ -13,6 +13,19 @@ inputs:
     description: App directory that contains .fixloop.json.
     required: false
     default: '.'
+outputs:
+  triage:
+    description: passed, product_regression, test_defect, or flake
+    value: ${{ steps.fixloop.outputs.triage }}
+  verified:
+    description: true if the re-run after a patch was green
+    value: ${{ steps.fixloop.outputs.verified }}
+  passed:
+    description: true if the oracle passed (nothing to heal)
+    value: ${{ steps.fixloop.outputs.passed }}
+  healed:
+    description: true if application code was written
+    value: ${{ steps.fixloop.outputs.healed }}
 runs:
   using: composite
   steps:
@@ -21,10 +34,13 @@ runs:
       working-directory: ${{ github.action_path }}
       run: npm ci --omit=dev
     - name: Run Fixloop
+      id: fixloop
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
-        GITHUB_REPOSITORY: ${{ env.GITHUB_REPOSITORY }}
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        GITHUB_REF_NAME: ${{ github.ref_name }}
         FIXLOOP_PLAYWRIGHT_COMMAND: ${{ inputs.command }}
       run: node "${{ github.action_path }}/bin/fixloop.js" ci

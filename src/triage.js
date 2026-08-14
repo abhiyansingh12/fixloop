@@ -7,7 +7,8 @@ const FLAKE_RE =
 const TEST_DEFECT_RE =
   /strict mode violation|resolved to \d+ elements|toMatchSnapshot|snapshot|locator\([^)]+\) not found because the test used a stale selector|unable to find an element by title/i;
 const PRODUCT_RE =
-  /pageerror|uncaught|internal server error|\b500\b|cta-primary-broken|click handler|not wired|toHaveText|Get started|addEventListener/i;
+  /pageerror|uncaught|internal server error|\b500\b|cta-primary-broken|click handler|not wired|toHaveText|toHaveURL|Get started|Pay now|addEventListener|#status|checkout/i;
+const UI_ASSERT_RE = /expect\(|toHaveText|toBeVisible|toHaveURL|getByRole|locator\(|\.click\(/i;
 
 function isTestPath(filePath) {
   const p = String(filePath ?? '').replace(/\\/g, '/');
@@ -77,6 +78,14 @@ export function triageFailure(oracleResult, opts = {}) {
   }
 
   if (FLAKE_RE.test(text) && !PRODUCT_RE.test(text)) {
+    const appTarget = opts.healTarget && !isTestPath(opts.healTarget);
+    if (appTarget && UI_ASSERT_RE.test(text) && !failure.passedOnRetry) {
+      return {
+        label: 'product_regression',
+        reason: 'UI assertion timed out against application code (not classifying as flake)',
+        confidence: 0.55,
+      };
+    }
     return {
       label: 'flake',
       reason: `transient error: ${text.replace(/\s+/g, ' ').slice(0, 160)}`,
