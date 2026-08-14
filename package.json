@@ -1,6 +1,6 @@
 {
   "name": "fixloop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Triage red Playwright runs. Only product_regression may write code. Re-run must be green before a draft PR.",
   "type": "module",
   "bin": {

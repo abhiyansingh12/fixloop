@@ -17,10 +17,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Trusted Publisher (OIDC) needs Node >= 22.14 and npm >= 11.5.1
           node-version: '22'
-          # Do not set registry-url: setup-node would write an empty
-          # _authToken into .npmrc and the PUT to npm returns 404.
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1. Node 22's bundled npm is older.
+      - name: Install npm 11
+        run: npm install -g npm@11
 
       - run: npm ci
 
@@ -32,7 +34,18 @@ jobs:
           FIXLOOP_OPEN_PR: '0'
         run: npm test
 
-      # OIDC via id-token: write. Do not set NODE_AUTH_TOKEN here — an empty
-      # NPM_TOKEN secret would mask trusted publishing and fail auth.
+      - name: Release tag must match package.json
+        if: github.event_name == 'release'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG package=$PKG"
+          test "$TAG" = "$PKG"
+
       - name: Publish
-        run: npm publish --access public --provenance
+        run: |
+          # setup-node writes an empty _authToken when NPM_TOKEN is unset.
+          # That blocks OIDC trusted publishing (ENEEDAUTH / 404).
+          npm config delete "//registry.npmjs.org/:_authToken" || true
+          npm --version
+          npm publish --access public --provenance

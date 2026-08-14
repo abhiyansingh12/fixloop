@@ -9,7 +9,7 @@ Triage is the feature. Every failure gets one label: `product_regression`, `test
 
 Playwright is the default oracle. After a patch, Fixloop **re-runs the same command**. If the suite is still red, **it does not open a PR.** PRs are **draft**. There is **no auto-merge**.
 
-Install: `npx fixloop`. Config: `.fixloop.json`. Action: `abhiyansingh12/fixloop@v1.0.1` (pin a tag in production, not `@main`).
+Install: `npx fixloop`. Config: `.fixloop.json`. Action: `abhiyansingh12/fixloop@v1.0.2` (pin a tag in production, not `@main`).
 
 ## Install (GitHub Action)
 
@@ -17,7 +17,7 @@ Copy [`templates/github/fixloop.yml`](templates/github/fixloop.yml) into `.githu
 
 ```yaml
 - name: Fixloop
-  uses: abhiyansingh12/fixloop@v1.0.1
+  uses: abhiyansingh12/fixloop@v1.0.2
   with:
     command: npx playwright test
 ```
