@@ -1,44 +1,13 @@
-export { createStreamParser, parseLine, formatFailureBlock } from './parser.js';
-export { runKaneTest, logKaneEvent, resolveKaneBin } from './runner.js';
-export { healFile, healLoop, buildHealPrompt, extractCodeFromResponse } from './healer.js';
-export {
-  scanRoutes,
-  scaffoldTest,
-  buildTestmdFromRoutes,
-  scanStaticPages,
-  discoverFlows,
-  detectFramework,
-  fileToRoute,
-} from './scanner.js';
-export { verifyGitHubRepository } from './github/verify.js';
-export { startGitHubWebhookServer } from './github/server.js';
-export { loadConfig, resolvePaths, DEFAULT_CONFIG } from './config.js';
-export { tryLocalHeal, WORKING_MAIN_JS } from './local-healer.js';
-export {
-  initProject,
-  runPipeline,
-  assertKaneReady,
-  waitForHttp,
-  loadProject,
-} from './pipeline.js';
-export {
-  shouldOpenAutomatedPr,
-  isTrustedCommentAuthor,
-  isVerifyComment,
-  resolveChatCompletionsUrl,
-  isHealBotPullRequest,
-  selectHealBranch,
-} from './policy.js';
-export { loadEnvFile } from './env.js';
-export {
-  validateFile,
-  checkSyntax,
-  checkRuntime,
-  healSyntaxError,
-  syntaxHealPipeline,
-} from './syntax-healer.js';
-export { assertHealPathAllowed, matchGlob, DEFAULT_HEAL_ALLOWLIST } from './allowlist.js';
-export { applyUnifiedDiff, applyHealContent, looksLikeUnifiedDiff } from './patch.js';
-export { evaluateFixture, loadFixture, DEFAULT_FIXTURE } from './fixture.js';
-export { pickStartPlan, inferPortFromScript } from './github/detect.js';
-export { detectPackageManager } from './github/clone.js';
+export { healLoop, createSelfHealedPR, restoreHealTarget } from './healer.js';
+export { runKane, parseKaneJson } from './kane-adapter.js';
+export { runPlaywright, parsePlaywrightJson } from './playwright-oracle.js';
+export { runOracle } from './oracle.js';
+export { runPipeline } from './pipeline.js';
+export { triageFailure, TEST_DEFECT_COMMENT } from './triage.js';
+export { loadConfig, saveConfig } from './config.js';
+export { runFixtureKane } from './fixture.js';
+export { simulateKaneRun } from './simulator.js';
+export { detectFramework } from './scanner.js';
+export { isPathAllowed, DEFAULT_ALLOWLIST } from './allowlist.js';
+export { applyUnifiedDiff } from './diff-apply.js';
+export { env } from './flags.js';

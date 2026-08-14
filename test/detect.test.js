@@ -15,10 +15,20 @@ describe('start plan', () => {
     assert.equal(plan.port, 4000);
   });
 
-  it('keeps the demo server as node demo/server.js', () => {
+  it('keeps the demo server as node examples/demo/server.js', () => {
     const plan = pickStartPlan({
       framework: 'static-demo',
-      pkg: { scripts: { start: 'node bin/kiro-heal.js start' } },
+      pkg: { scripts: { start: 'node bin/fixloop.js start' } },
+      serverEntry: 'examples/demo/server.js',
+    });
+    assert.equal(plan.startCommand, 'node');
+    assert.deepEqual(plan.startArgs, ['examples/demo/server.js']);
+  });
+
+  it('keeps a legacy demo/server.js entry as node', () => {
+    const plan = pickStartPlan({
+      framework: 'static-demo',
+      pkg: { scripts: { start: 'node bin/fixloop.js start' } },
       serverEntry: 'demo/server.js',
     });
     assert.equal(plan.startCommand, 'node');

@@ -1,11 +1,16 @@
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { loadConfig, resolvePaths } from './config.js';
-import { healLoop } from './healer.js';
-import { logKaneEvent, runKaneTest } from './runner.js';
-import { scaffoldTest, scanRoutes } from './scanner.js';
+import { loadConfig, resolvePaths, DEFAULT_CONFIG } from './config.js';
+import { healLoop, createSelfHealedPR } from './healer.js';
+import { formatFailureBlock } from './parser.js';
 import { WORKING_MAIN_JS } from './local-healer.js';
+import { runOracle } from './oracle.js';
+import { formatTriageMessage, TEST_DEFECT_COMMENT, triageFailure } from './triage.js';
+import { shouldOpenAutomatedPr, STABLE_AUTO_FIX_BRANCH } from './policy.js';
+import { envOn } from './flags.js';
+import { postComment } from './github/pr.js';
+import { Octokit } from '@octokit/rest';
 
 const DEFAULT_KANE = 'kane-cli';
 
@@ -20,19 +25,11 @@ export async function assertKaneReady(kaneBin = process.env.KANE_CLI_BIN ?? DEFA
       out += c;
     });
     child.on('error', () => {
-      reject(
-        new Error(
-          `${kaneBin} not found. Install: npm i -g @testmuai/kane-cli then run: kane-cli login`,
-        ),
-      );
+      reject(new Error(`${kaneBin} not found. Kane is optional — default oracle is Playwright.`));
     });
     child.on('close', (code) => {
       if (code !== 0) {
-        reject(
-          new Error(
-            `Kane CLI not authenticated. Run: kane-cli login\n${out.slice(0, 200)}`,
-          ),
-        );
+        reject(new Error(`Kane CLI not authenticated.\n${out.slice(0, 200)}`));
         return;
       }
       resolve(out.trim());
@@ -40,20 +37,17 @@ export async function assertKaneReady(kaneBin = process.env.KANE_CLI_BIN ?? DEFA
   });
 }
 
-/**
- * @param {string} repoRoot
- * @param {import('./config.js').KiroHealConfig} config
- */
 export async function initProject(repoRoot, config) {
   const paths = resolvePaths(repoRoot, config);
   await fs.mkdir(path.dirname(paths.testFile), { recursive: true });
 
+  const { scaffoldTest, scanRoutes } = await import('./scanner.js');
   const routes = await scanRoutes(repoRoot);
   const { outputPath, content } = await scaffoldTest({
     repoRoot,
     outputPath: paths.testFile,
     baseUrl: config.baseUrl,
-    useLlm: process.env.KIRO_HEAL_SCAN_LLM === '1',
+    useLlm: envOn('SCAN_LLM'),
   });
 
   if (config.demoBroken) {
@@ -63,12 +57,9 @@ export async function initProject(repoRoot, config) {
   return { testFile: outputPath, routes, content };
 }
 
-/**
- * @param {string} healTargetAbs
- */
 export async function injectDemoRegression(healTargetAbs) {
   const broken = `/**
- * Demo app — intentional regression for kiro-heal E2E (wrong element id).
+ * Example app — intentional regression (wrong element id).
  */
 (function init() {
   const cta = document.getElementById('cta-primary-broken');
@@ -83,23 +74,14 @@ export async function injectDemoRegression(healTargetAbs) {
 })();
 `;
   await fs.writeFile(healTargetAbs, broken, 'utf8');
-  console.log('[kiro-heal] injected demo regression into demo/public/js/main.js');
+  console.log('[fixloop] injected example regression');
 }
 
-/**
- * Restore working demo JS (for manual reset).
- * @param {string} healTargetAbs
- */
 export async function restoreDemo(healTargetAbs) {
   await fs.writeFile(healTargetAbs, WORKING_MAIN_JS, 'utf8');
-  console.log('[kiro-heal] restored working demo/public/js/main.js');
+  console.log('[fixloop] restored working example main.js');
 }
 
-/**
- * Wait until HTTP server responds.
- * @param {string} url
- * @param {number} [maxMs]
- */
 export async function waitForHttp(url, maxMs = 15000) {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
@@ -114,80 +96,138 @@ export async function waitForHttp(url, maxMs = 15000) {
   throw new Error(`Server not ready at ${url} after ${maxMs}ms`);
 }
 
-/**
- * @param {object} opts
- * @param {string} opts.repoRoot
- * @param {import('./config.js').KiroHealConfig} opts.config
- * @param {boolean} [opts.enableHeal]
- * @param {string|null} [opts.targetOverride]
- */
 export function createRunTestFn(opts) {
-  const paths = resolvePaths(opts.repoRoot, opts.config);
   return async () =>
-    runKaneTest({
-      testFile: paths.testFile,
+    runOracle({
       cwd: opts.repoRoot,
-      timeoutSeconds: opts.config.kaneTimeout,
-      onEvent: logKaneEvent,
-      targetRel: opts.config.healTarget,
-      fixturePath: opts.config.fixtureFile,
-      onRaw: (chunk, stream) => {
-        if (process.env.KIRO_HEAL_VERBOSE === '1') process[stream].write(chunk);
-      },
+      config: opts.config,
+      testFile: resolvePaths(opts.repoRoot, opts.config).testFile,
     });
 }
 
 /**
- * Full verify + heal loop.
+ * Triage → (maybe) heal → re-run the same oracle. PR only if the re-run is green.
  * @param {object} opts
  */
 export async function runPipeline(opts) {
   const repoRoot = path.resolve(opts.repoRoot ?? process.cwd());
-  const config = opts.config ?? (await loadConfig(repoRoot));
+  const config = { ...DEFAULT_CONFIG, ...(opts.config ?? (await loadConfig(repoRoot))) };
   const paths = resolvePaths(repoRoot, config);
   const enableHeal = opts.enableHeal !== false;
+  const log = opts.log ?? console.log;
 
-  if (opts.checkKane !== false) {
-    const { shouldUseSimulator } = await import('./runner.js');
-    const sim = await shouldUseSimulator();
-    if (sim) {
-      console.log('[kiro-heal] mode: offline simulator (Kane-compatible NDJSON)');
-    } else {
-      const who = await assertKaneReady();
-      console.log(`[kiro-heal] mode: live Kane CLI — ${who.split('\n')[0]}`);
-    }
+  log(`[fixloop] oracle=${config.oracle ?? 'playwright'}`);
+
+  const runTest = opts.runTest ?? createRunTestFn({ repoRoot, config });
+  const first = await runTest();
+
+  if (first.outcome === 'passed') {
+    log('[fixloop] ✓ oracle passed — nothing to triage');
+    return {
+      passed: true,
+      triage: { label: 'passed', reason: 'oracle passed', confidence: 1 },
+      healCount: 0,
+      verified: true,
+      lastResult: first,
+    };
   }
 
-  try {
-    await fs.access(paths.testFile);
-  } catch {
-    console.log('[kiro-heal] no test file — running init (scan + scaffold)…');
-    await initProject(repoRoot, config);
+  const triage = triageFailure(first, { healTarget: config.healTarget });
+  log(`[fixloop] triage: ${triage.label} (${triage.reason})`);
+
+  await maybePostTriage(opts, triage);
+
+  if (triage.label === 'test_defect') {
+    log(`[fixloop] ${TEST_DEFECT_COMMENT}`);
+    return {
+      passed: false,
+      triage,
+      healCount: 0,
+      verified: false,
+      lastResult: first,
+    };
   }
 
-  const target =
-    opts.targetOverride ?? paths.healTarget;
-
-  const runTest = createRunTestFn({ repoRoot, config });
+  if (triage.label === 'flake') {
+    log('[fixloop] classified as flake — not patching');
+    return {
+      passed: false,
+      triage,
+      healCount: 0,
+      verified: false,
+      lastResult: first,
+    };
+  }
 
   if (!enableHeal) {
-    const result = await runTest();
-    return { passed: result.outcome === 'passed', lastResult: result, healCount: 0 };
+    return { passed: false, triage, healCount: 0, verified: false, lastResult: first };
   }
 
-  return healLoop({
+  const target = opts.targetOverride ?? paths.healTarget;
+  const healOutcome = await healLoop({
     repoRoot,
     maxHealAttempts: config.maxHeal,
     runTest,
     resolveTarget: async () => target,
     allowlist: config.healAllowlist,
     healTarget: config.healTarget,
+    skipInitialRun: true,
+    initialResult: first,
+  });
+
+  if (!healOutcome.passed) {
+    log('[fixloop] re-run still red — not opening a PR');
+    return { ...healOutcome, triage, verified: false };
+  }
+
+  log('[fixloop] ✓ re-run passed after patch');
+
+  if (healOutcome.healCount > 0 && shouldOpenAutomatedPr()) {
+    const pr = await openVerifiedDraftPr({
+      repoRoot,
+      target,
+      lastResult: healOutcome.lastResult,
+      triage,
+      github: opts.github,
+    });
+    return { ...healOutcome, triage, verified: true, pr };
+  }
+
+  return { ...healOutcome, triage, verified: true };
+}
+
+async function openVerifiedDraftPr({ repoRoot, target, lastResult, triage, github }) {
+  const owner = github?.owner ?? process.env.GITHUB_OWNER ?? process.env.GITHUB_REPOSITORY_OWNER;
+  const repo =
+    github?.repo ??
+    process.env.GITHUB_REPO ??
+    process.env.GITHUB_REPOSITORY?.split('/')[1];
+  if (!owner || !repo) return null;
+
+  const absPath = path.isAbsolute(target) ? target : path.join(repoRoot, target);
+  const correctedCode = await fs.readFile(absPath, 'utf8');
+  return createSelfHealedPR({
+    owner,
+    repo,
+    branchName: STABLE_AUTO_FIX_BRANCH,
+    filename: path.relative(repoRoot, absPath),
+    correctedCode,
+    failureReport: `${formatTriageMessage(triage)}\n\n${formatFailureBlock(lastResult)}`,
+    baseBranch: github?.baseBranch ?? process.env.GITHUB_REF_NAME ?? 'main',
+    draft: true,
   });
 }
 
-/**
- * @param {string} repoRoot
- */
+async function maybePostTriage(opts, triage) {
+  const issueNumber = opts.issueNumber ?? process.env.FIXLOOP_ISSUE_NUMBER;
+  const token = process.env.GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER ?? process.env.GITHUB_REPOSITORY_OWNER;
+  const repo = process.env.GITHUB_REPO ?? process.env.GITHUB_REPOSITORY?.split('/')[1];
+  if (!issueNumber || !token || !owner || !repo) return;
+  const octokit = new Octokit({ auth: token });
+  await postComment(octokit, owner, repo, Number(issueNumber), formatTriageMessage(triage));
+}
+
 export async function loadProject(repoRoot) {
   const config = await loadConfig(repoRoot);
   const paths = resolvePaths(repoRoot, config);

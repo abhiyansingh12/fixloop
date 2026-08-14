@@ -3,7 +3,7 @@ import path from 'node:path';
 
 /** Built-in fixture used when a repo has not recorded its own. */
 export const DEFAULT_FIXTURE = {
-  target: 'demo/public/js/main.js',
+  target: 'examples/demo/public/js/main.js',
   failIfAny: ['cta-primary-broken', 'HEAL_BROKEN'],
   passIfAny: ["getElementById('cta-primary')", 'getElementById("cta-primary")'],
   steps: [
@@ -52,14 +52,16 @@ export function evaluateFixture(source, fixture) {
 }
 
 /**
- * Load `.kiro-heal/fixture.json` or an explicit path. Missing file → default fixture.
+ * Load `.fixloop/fixture.json` (legacy `.kiro-heal/fixture.json`) or an explicit path.
  * @param {string} cwd
  * @param {string} [explicitPath]
  */
 export async function loadFixture(cwd, explicitPath) {
   const candidates = [
     explicitPath,
+    process.env.FIXLOOP_FIXTURE,
     process.env.KIRO_HEAL_FIXTURE,
+    path.join(cwd, '.fixloop', 'fixture.json'),
     path.join(cwd, '.kiro-heal', 'fixture.json'),
   ].filter(Boolean);
 

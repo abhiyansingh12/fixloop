@@ -1,0 +1,13 @@
+{
+  "oracle": "fixture",
+  "healTarget": "examples/demo/public/js/main.js",
+  "demoServer": "examples/demo/server.js",
+  "baseUrl": "http://localhost:3000",
+  "allowlist": [
+    "src/**",
+    "app/**",
+    "lib/**",
+    "examples/**",
+    "public/js/**"
+  ]
+}

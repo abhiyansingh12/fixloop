@@ -3,6 +3,7 @@ import path from 'node:path';
 import { detectFramework, scanRoutes, discoverFlows } from '../scanner.js';
 
 const HEAL_CANDIDATES = [
+  'examples/demo/public/js/main.js',
   'demo/public/js/main.js',
   'public/js/main.js',
   'src/main.js',
@@ -13,7 +14,7 @@ const HEAL_CANDIDATES = [
   'app/page.jsx',
 ];
 
-const SERVER_CANDIDATES = ['demo/server.js', 'server.js', 'index.js'];
+const SERVER_CANDIDATES = ['examples/demo/server.js', 'demo/server.js', 'server.js', 'index.js'];
 
 export const FRAMEWORK_PORTS = {
   vite: 5173,
@@ -197,11 +198,12 @@ export async function detectRuntime(repoRoot) {
 export function runtimeConfigForGitHub(runtime, port) {
   return {
     baseUrl: `http://127.0.0.1:${port}`,
-    testFile: '.kiro-heal/smoke.testmd',
+    testFile: '.fixloop/smoke.testmd',
     healTarget: runtime.healTarget,
     demoServer: runtime.serverEntry,
-    maxHeal: Number(process.env.KIRO_HEAL_MAX ?? 5),
-    kaneTimeout: Number(process.env.KIRO_HEAL_TIMEOUT ?? 180),
+    maxHeal: Number(process.env.FIXLOOP_MAX ?? process.env.KIRO_HEAL_MAX ?? 5),
+    kaneTimeout: Number(process.env.FIXLOOP_TIMEOUT ?? process.env.KIRO_HEAL_TIMEOUT ?? 180),
+    oracle: 'playwright',
     debounceMs: 1200,
     demoBroken: false,
   };

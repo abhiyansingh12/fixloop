@@ -6,7 +6,7 @@ describe('webhook comment gate', () => {
   it('accepts collaborator verify comments', () => {
     assert.equal(
       shouldHandleVerifyComment({
-        comment: { body: '/kiro-heal verify', author_association: 'COLLABORATOR' },
+        comment: { body: '/fixloop verify', author_association: 'COLLABORATOR' },
         installation: { id: 42 },
       }),
       true,
@@ -16,7 +16,7 @@ describe('webhook comment gate', () => {
   it('rejects verify comments from outsiders', () => {
     assert.equal(
       shouldHandleVerifyComment({
-        comment: { body: '/kiro-heal verify', author_association: 'NONE' },
+        comment: { body: '/fixloop verify', author_association: 'NONE' },
         installation: { id: 42 },
       }),
       false,

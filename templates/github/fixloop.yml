@@ -1,0 +1,31 @@
+# Drop-in workflow: when Playwright goes red, Fixloop triages and may open a draft PR.
+# Only product_regression may write application code. A still-red re-run never opens a PR.
+name: Fixloop
+
+on:
+  workflow_run:
+    workflows: [Playwright]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  heal:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Fixloop
+        uses: abhiyansingh12/fixloop@main
+        with:
+          command: npx playwright test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

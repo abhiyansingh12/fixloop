@@ -1,5 +1,5 @@
 {
-  "target": "demo/public/js/main.js",
+  "target": "examples/demo/public/js/main.js",
   "failIfAny": ["cta-primary-broken", "HEAL_BROKEN"],
   "passIfAny": ["getElementById('cta-primary')", "getElementById(\"cta-primary\")"],
   "steps": [

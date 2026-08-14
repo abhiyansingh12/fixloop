@@ -9,7 +9,7 @@
 
   cta.addEventListener('click', () => {
     status.textContent =
-      'Pipeline connected. Kane CLI can verify this interaction on the next run.';
+      'Pipeline connected. Playwright can verify this interaction on the next run.';
     status.dataset.state = 'success';
     cta.setAttribute('aria-pressed', 'true');
   });

@@ -1,22 +1,24 @@
 {
-  "name": "kiro-heal",
-  "version": "0.2.0",
-  "description": "Local self-healing + GitHub Auto-Verification Bot powered by Kane CLI",
+  "name": "fixloop",
+  "version": "1.0.0",
+  "description": "Triage red Playwright runs. Only product_regression may write code. Re-run must be green before a draft PR.",
   "type": "module",
   "bin": {
+    "fixloop": "./bin/fixloop.js",
     "kiro-heal": "./bin/kiro-heal.js"
   },
   "main": "./src/index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abhiyansingh12/hackkk.git"
+    "url": "git+https://github.com/abhiyansingh12/fixloop.git"
   },
   "bugs": {
-    "url": "https://github.com/abhiyansingh12/hackkk/issues"
+    "url": "https://github.com/abhiyansingh12/fixloop/issues"
   },
-  "homepage": "https://github.com/abhiyansingh12/hackkk#readme",
+  "homepage": "https://github.com/abhiyansingh12/fixloop#readme",
   "author": "abhiyansingh12",
   "files": [
+    "action.yml",
     "bin",
     "src",
     "templates",
@@ -26,16 +28,16 @@
     "SECURITY.md"
   ],
   "scripts": {
-    "start": "node bin/kiro-heal.js start",
+    "start": "node bin/fixloop.js start",
     "dev": "node scripts/dev.mjs",
-    "init": "node bin/kiro-heal.js init",
-    "run:e2e": "node bin/kiro-heal.js run",
-    "demo": "node demo/server.js",
-    "watch": "node bin/kiro-heal.js watch",
+    "init": "node bin/fixloop.js init",
+    "run:e2e": "node bin/fixloop.js run",
+    "demo": "node examples/demo/server.js",
+    "watch": "node bin/fixloop.js watch",
     "watchdog": "node bin/watchdog.js",
-    "scan": "node bin/kiro-heal.js scan",
-    "github:serve": "node bin/kiro-heal.js github serve",
-    "github:verify": "node bin/kiro-heal.js github verify",
+    "scan": "node bin/fixloop.js scan",
+    "github:serve": "node bin/fixloop.js github serve",
+    "github:verify": "node bin/fixloop.js github verify",
     "test": "node --test test/*.test.js",
     "prepublishOnly": "npm test"
   },
@@ -43,19 +45,24 @@
     "node": ">=18"
   },
   "keywords": [
-    "kiro",
-    "kane-cli",
+    "fixloop",
+    "playwright",
+    "triage",
     "self-healing",
-    "browser-testing"
+    "github-action"
   ],
   "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
   "peerDependencies": {
+    "@playwright/test": ">=1.40.0",
     "@testmuai/kane-cli": ">=0.8.0"
   },
   "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    },
     "@testmuai/kane-cli": {
       "optional": true
     }

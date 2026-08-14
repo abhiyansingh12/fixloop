@@ -15,7 +15,7 @@ export async function startGitHubWebhookServer(opts = {}) {
   const server = http.createServer(async (req, res) => {
     if (req.url === '/health' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, service: 'kiro-heal-github' }));
+      res.end(JSON.stringify({ ok: true, service: 'fixloop-github' }));
       return;
     }
 
@@ -54,15 +54,15 @@ export async function startGitHubWebhookServer(opts = {}) {
       res.writeHead(200);
       res.end('ok');
     } catch (err) {
-      console.error('[kiro-heal:github] webhook error:', err.message);
+      console.error('[fixloop:github] webhook error:', err.message);
       res.writeHead(400);
       res.end('Webhook Error');
     }
   });
 
   await new Promise((resolve) => server.listen(port, resolve));
-  console.log(`[kiro-heal:github] webhook server http://0.0.0.0:${port}/api/github/webhooks`);
-  console.log(`[kiro-heal:github] health http://0.0.0.0:${port}/health`);
+  console.log(`[fixloop:github] webhook server http://0.0.0.0:${port}/api/github/webhooks`);
+  console.log(`[fixloop:github] health http://0.0.0.0:${port}/health`);
 
   return { server, port };
 }

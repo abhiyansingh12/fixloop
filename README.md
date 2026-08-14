@@ -1,76 +1,117 @@
-# kiro-heal
+# fixloop
 
-**Local self-healing** + **GitHub Auto-Verification Bot**. Scan a repo, generate Kane `testmd` smoke tests, run browser verification (or an offline fixture simulator), auto-heal failures, and optionally open a PR.
+Triage is the feature. Every failure gets one label: `product_regression`, `test_defect`, or `flake`. **Only `product_regression` may write application code.** `test_defect` comments **“update the test, I will not.”** That single rule is why you would use this instead of a generic coding agent.
 
-> GitHub repo: [`abhiyansingh12/hackkk`](https://github.com/abhiyansingh12/hackkk). The CLI and npm package are **kiro-heal**.
+Playwright is the default oracle. Fixloop reads the JSON report from the same command CI already ran. Kane stays as an optional adapter. You do not `kane-cli login` to try an unknown GitHub App.
 
-## Install
+The OSS install path is a **GitHub Action**, not a hosted App. Drop in a workflow that runs when Playwright goes red. After a patch, Fixloop **re-runs the same command**. If the suite is still red, **it does not open a PR.**
 
-```bash
-# from this repository (until the package is published)
-npm install github:abhiyansingh12/hackkk
+Safety is the product: allowlist, unified diffs, no `.env`, one stable branch (`fixloop/auto-fix`), **draft PR**, **no auto-merge**.
 
-# after npm publish
-# npm install -g kiro-heal
+```
+npx fixloop
+.fixloop.json
+uses: abhiyansingh12/fixloop@main   # Action name: fixloop/action (root action.yml)
 ```
 
-Real browser verification uses optional [`@testmuai/kane-cli`](https://www.npmjs.com/package/@testmuai/kane-cli):
+> Product name is **fixloop** (`npx fixloop`, `.fixloop.json`, Action `fixloop/action`). GitHub: [`abhiyansingh12/fixloop`](https://github.com/abhiyansingh12/fixloop).
 
-```bash
-npm install -D @testmuai/kane-cli
-kane-cli login
+## Install (GitHub Action)
+
+Copy [`templates/github/fixloop.yml`](templates/github/fixloop.yml) into `.github/workflows/fixloop.yml` in your app repo:
+
+```yaml
+- name: Fixloop
+  uses: abhiyansingh12/fixloop@main
+  with:
+    command: npx playwright test
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Without Kane, kiro-heal uses a **recorded fixture** (`.kiro-heal/fixture.json`, see `templates/fixture.json`). Copy that file into a target repo to describe pass/fail markers for the heal target.
+Permissions needed: `contents: write`, `pull-requests: write`. The Action runs `npx playwright test` (or your `--command`), triages the JSON report, patches **only** on `product_regression`, re-runs the **same** command, and opens a **draft** PR on `fixloop/auto-fix` only if that re-run is green.
 
-## Quick start (local)
+## Golden path (Vite + Playwright)
+
+The README path is a real Vite app with a real Playwright spec — not the old CTA demo.
 
 ```bash
+cd examples/vite-app
 npm install
-cp .env.example .env   # optional
+npx playwright install chromium
 npm test
-npm run dev            # demo server + scan + heal + watch (injects a demo bug)
 ```
+
+Break the click handler in `examples/vite-app/src/main.js`, then from the repo root:
 
 ```bash
-npx kiro-heal init --broken   # --broken only for this demo app
-npx kiro-heal run
-npx kiro-heal watch
+npm install github:abhiyansingh12/fixloop   # or: npm install -g fixloop after publish
+npx fixloop run --dir examples/vite-app --command "npx playwright test"
 ```
 
-## GitHub bot
+Add `.fixloop.json` in the app:
+
+```json
+{
+  "oracle": "playwright",
+  "healTarget": "src/main.js",
+  "playwrightCommand": "npx playwright test"
+}
+```
+
+A Next app is the same shape: point `healTarget` at `app/page.tsx` (or `src/app/page.tsx`) and keep `playwrightCommand` as the command CI already uses.
+
+## Triage
+
+| Label | What Fixloop does |
+| --- | --- |
+| `product_regression` | Patch allowlisted application code, re-run the same command, draft PR only if green |
+| `test_defect` | Comment **update the test, I will not.** No writes. |
+| `flake` | Not patching. Timeouts, net errors, passed-on-retry. |
+
+## Safety
+
+- Writes limited to `healAllowlist` in `.fixloop.json` (default: `src/`, `app/`, `pages/`, `public/`, `examples/`, …)
+- `.env`, `*.pem`, lockfiles, `node_modules`, `.git` are denylisted
+- Prefer unified diffs; empty writes are refused
+- One stable branch: `fixloop/auto-fix`
+- Draft PRs only. Never auto-merge
+- Local CLI does not open PRs unless `FIXLOOP_OPEN_PR=1`
+- GitHub Actions may open a draft PR after a **green** re-run (`GITHUB_TOKEN`); set `FIXLOOP_OPEN_PR=0` to disable
+
+## CLI
 
 ```bash
-cp .env.example .env   # fill GITHUB_* vars
-npm run github:serve
-kiro-heal github verify --repo owner/name --installation-id <id>
+npx fixloop init
+npx fixloop run --command "npx playwright test"
+npx fixloop ci --command "npx playwright test"
+npx fixloop watch
+npx fixloop scan
 ```
-
-Full setup: [docs/GITHUB_APP.md](docs/GITHUB_APP.md). Security notes: [SECURITY.md](SECURITY.md).
-
-**Triggers:** `repository_dispatch` (`kiro-heal-verify`), `/kiro-heal verify` on issues (collaborators only), optional push auto-verify.
-
-Automated pull requests are **off by default**. Set `KIRO_HEAL_OPEN_PR=1` to allow the bot to open or update a PR. Existing open `kiro-heal/*` PRs are reused.
-
-Heals are limited to `healAllowlist` in `.kiro-heal.json` (source folders only). The model is asked for a unified diff; whole-file overwrites are a fallback.
-
-## Commands
 
 | Command | Description |
-|--------|-------------|
-| `kiro-heal init` | Scan repo, scaffold `.kiro-heal/smoke.testmd` |
-| `kiro-heal start` | Demo server + init + E2E heal + watch |
-| `kiro-heal run` | One-shot Kane + heal loop |
-| `kiro-heal watch` | Re-run on file changes |
-| `kiro-heal scan` | Regenerate testmd only |
-| `kiro-heal github serve` | Webhook server for GitHub App |
-| `kiro-heal github verify` | Clone remote repo, verify, open PR |
+| --- | --- |
+| `fixloop init` | Scan routes, write `.fixloop/smoke.testmd` |
+| `fixloop run` | Triage → maybe heal → re-run |
+| `fixloop ci` | Action entry: same as run; `test_defect` exits 0; still-red exits 1 and **does not** open a PR |
+| `fixloop watch` | Re-run on file changes |
+| `fixloop scan` | Regenerate smoke testmd |
+| `fixloop start` | Optional example server + init + run + watch (`examples/demo`) |
+| `fixloop github serve` | Optional webhook server (secondary to the Action) |
+| `fixloop github verify` | Optional clone + verify (secondary) |
+
+Kane is optional: `oracle: "kane"` in `.fixloop.json`, or `FIXLOOP_ORACLE=kane`. Without Kane or Playwright, Fixloop uses a recorded fixture (`.fixloop/fixture.json`).
+
+## Examples
+
+- **Golden path:** [`examples/vite-app`](examples/vite-app) — Vite + Playwright
+- **Legacy CTA demo:** [`examples/demo`](examples/demo) — `cta-primary-broken` lives here, not in the README path
 
 ## Environment
 
-See [`.env.example`](.env.example). The CLI loads `.env` from the current working directory on startup.
+See [`.env.example`](.env.example). `FIXLOOP_*` is canonical; `KIRO_HEAL_*` is read for one release.
 
-To publish the npm package, add `NPM_TOKEN` to repo secrets and create a GitHub Release. The [publish workflow](.github/workflows/publish.yml) runs tests and `npm publish`.
+To publish the npm package, add `NPM_TOKEN` to repo secrets and create a GitHub Release.
 
 ## License
 

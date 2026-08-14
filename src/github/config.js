@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { env, envOn } from '../flags.js';
 
 /**
  * @typedef {object} GitHubBotConfig
@@ -27,10 +28,10 @@ export async function loadGitHubConfig() {
     privateKey,
     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET ?? null,
     token: process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? null,
-    port: Number(process.env.KIRO_HEAL_GITHUB_PORT ?? process.env.PORT ?? 3939),
-    autoVerifyOnPush: process.env.KIRO_HEAL_GITHUB_AUTO_PUSH === '1',
-    verifyEventType: process.env.KIRO_HEAL_GITHUB_EVENT ?? 'kiro-heal-verify',
-    workDirBase: process.env.KIRO_HEAL_WORK_DIR ?? '/tmp/kiro-heal',
+    port: Number(env('GITHUB_PORT') ?? process.env.PORT ?? 3939),
+    autoVerifyOnPush: envOn('GITHUB_AUTO_PUSH'),
+    verifyEventType: env('GITHUB_EVENT', 'fixloop-verify'),
+    workDirBase: env('WORK_DIR', '/tmp/fixloop'),
   };
 }
 
@@ -51,6 +52,6 @@ export function assertGitHubAppReady(config) {
 export function assertWebhookServerReady(config) {
   assertGitHubAppReady(config);
   if (!config.webhookSecret) {
-    throw new Error('GITHUB_WEBHOOK_SECRET is required for `kiro-heal github serve`.');
+    throw new Error('GITHUB_WEBHOOK_SECRET is required for `fixloop github serve`.');
   }
 }

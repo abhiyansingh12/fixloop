@@ -2,19 +2,18 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Octokit } from '@octokit/rest';
 import { formatFailureBlock } from './parser.js';
-import { tryLocalHeal } from './local-healer.js';
+import { tryLocalHeal, WORKING_MAIN_JS } from './local-healer.js';
 import {
   isValidGitHubRepoName,
   resolveChatCompletionsUrl,
   selectHealBranch,
-  shouldOpenAutomatedPr,
   STABLE_AUTO_FIX_BRANCH,
 } from './policy.js';
 import { assertHealPathAllowed, DEFAULT_HEAL_ALLOWLIST } from './allowlist.js';
 import { applyHealContent } from './patch.js';
 
 /**
- * Build the Kiro isolation prompt from failure trace + source.
+ * Build the repair prompt from failure trace + source.
  */
 export function buildHealPrompt(filePath, sourceCode, failureBlock) {
   return `CRITICAL REGRESSION DETECTED IN LOCAL APPLICATION
@@ -23,10 +22,10 @@ Source File: ${filePath}
 Current Code:
 ${sourceCode}
 
-Kane CLI Browser Verification Failure Trace:
+Kane / Playwright verification failure trace:
 ${failureBlock}
 
-Objective: Fix only the interaction, layout, or behavioral bug in the trace.
+Objective: Fix only the application bug. Never edit tests or snapshots.
 Prefer a unified diff (--- a/${filePath} / +++ b/${filePath} with @@ hunks).
 If a diff is not practical, return the complete corrected file in one fenced code block.
 Do not modify unrelated logic, secrets, or files.`;
@@ -51,17 +50,18 @@ export async function requestKiroFix(prompt) {
 
   if (!apiUrl) {
     throw new Error(
-      'No generation API configured. Set KIRO_HEAL_API_URL or OPENAI_API_KEY, or use local healing (default).',
+      'No generation API configured. Set FIXLOOP_API_URL or OPENAI_API_KEY, or use local healing (default).',
     );
   }
 
   const apiKey =
+    process.env.FIXLOOP_API_KEY ??
     process.env.KIRO_HEAL_API_KEY ??
     process.env.KIRO_API_KEY ??
     process.env.OPENAI_API_KEY ??
     '';
 
-  const model = process.env.KIRO_HEAL_MODEL ?? process.env.KIRO_MODEL ?? 'gpt-4o-mini';
+  const model = process.env.FIXLOOP_MODEL ?? process.env.KIRO_HEAL_MODEL ?? process.env.KIRO_MODEL ?? 'gpt-4o-mini';
 
   const res = await fetch(apiUrl, {
     method: 'POST',
@@ -85,7 +85,7 @@ export async function requestKiroFix(prompt) {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Kiro generation API failed (${res.status}): ${errText.slice(0, 500)}`);
+    throw new Error(`Generation API failed (${res.status}): ${errText.slice(0, 500)}`);
   }
 
   const data = await res.json();
@@ -110,12 +110,12 @@ export async function requestKiroFix(prompt) {
  * @param {string} prompt
  */
 export async function requestFix(absPath, sourceCode, parseResult, prompt) {
-  const provider = process.env.KIRO_HEAL_PROVIDER ?? 'auto';
+  const provider = process.env.FIXLOOP_PROVIDER ?? process.env.KIRO_HEAL_PROVIDER ?? 'auto';
 
   if (provider === 'local' || provider === 'auto') {
     const local = tryLocalHeal(absPath, sourceCode, parseResult);
     if (local) {
-      console.log('[kiro-heal] applied local rule-based heal');
+      console.log('[fixloop] applied local rule-based heal');
       return local;
     }
     if (provider === 'local') {
@@ -149,10 +149,10 @@ export async function healFile(options) {
   const failureBlock = formatFailureBlock(parseResult);
   const prompt = buildHealPrompt(rel, sourceCode, failureBlock);
 
-  console.log(`[kiro-heal] healing ${rel} (attempt ${attempt})…`);
+  console.log(`[fixloop] healing ${rel} (attempt ${attempt})…`);
 
-  if (process.env.KIRO_HEAL_DRY_RUN === '1') {
-    console.log('[kiro-heal] dry-run: skipping file write');
+  if (process.env.FIXLOOP_DRY_RUN === '1' || process.env.KIRO_HEAL_DRY_RUN === '1') {
+    console.log('[fixloop] dry-run: skipping file write');
     return { filePath: abs, healed: false };
   }
 
@@ -162,7 +162,7 @@ export async function healFile(options) {
     throw new Error('Heal produced an empty file — refusing to write');
   }
   await fs.writeFile(abs, fixedCode, 'utf8');
-  console.log(`[kiro-heal] wrote healed file: ${rel}`);
+  console.log(`[fixloop] wrote healed file: ${rel}`);
 
   return { filePath: abs, healed: true };
 }
@@ -188,15 +188,16 @@ export async function createSelfHealedPR({
   correctedCode,
   failureReport,
   baseBranch = 'main',
+  draft = true,
 }) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    console.warn('[kiro-heal] GITHUB_TOKEN not set — skipping PR creation.');
+    console.warn('[fixloop] GITHUB_TOKEN not set — skipping PR creation.');
     return null;
   }
 
   if (!isValidGitHubRepoName(owner, repo)) {
-    console.error('[kiro-heal] invalid GITHUB_OWNER / GITHUB_REPO — skipping PR creation.');
+    console.error('[fixloop] invalid GITHUB_OWNER / GITHUB_REPO — skipping PR creation.');
     return null;
   }
 
@@ -219,7 +220,7 @@ export async function createSelfHealedPR({
       ref: `heads/${baseBranch}`,
     });
     if (!refs.length) {
-      console.error(`[kiro-heal] base branch "${baseBranch}" not found`);
+      console.error(`[fixloop] base branch "${baseBranch}" not found`);
       return null;
     }
     const baseSha = refs[0].object.sha;
@@ -257,23 +258,20 @@ export async function createSelfHealedPR({
       owner,
       repo,
       path: filename,
-      message: 'chore(kiro-heal): autonomous patch from self-healing loop',
+      message: 'fixloop: verified product_regression patch',
       content: Buffer.from(correctedCode, 'utf8').toString('base64'),
       branch: headBranch,
       ...(fileSha ? { sha: fileSha } : {}),
     });
 
     const prBody = [
-      '### kiro-heal self-healing report',
+      '### fixloop report',
       '',
-      '**Status:** Verified ✅',
+      '**Status:** Re-run passed after patch (draft PR, not merged)',
       '',
-      '**Discovered failure trace:**',
-      '```',
       failureReport,
-      '```',
       '',
-      'This branch is reused on later heals (`kiro-heal/auto-fix`) so the bot does not open a new PR every run.',
+      'This branch is reused (`fixloop/auto-fix`). Only `product_regression` failures may write application code.',
     ].join('\n');
 
     if (selected.reusePr) {
@@ -285,7 +283,7 @@ export async function createSelfHealedPR({
           pull_number: existing.number,
           body: prBody,
         });
-        console.log(`[kiro-heal] updated existing pull request: ${existing.html_url}`);
+        console.log(`[fixloop] updated existing pull request: ${existing.html_url}`);
         return existing;
       }
     }
@@ -293,83 +291,65 @@ export async function createSelfHealedPR({
     const { data: pr } = await octokit.pulls.create({
       owner,
       repo,
-      title: 'chore(kiro-heal): automated bug fix',
+      title: 'fixloop: verified product regression fix',
       head: headBranch,
       base: baseBranch,
+      draft,
       body: prBody,
     });
 
-    console.log(`[kiro-heal] pull request created: ${pr.html_url}`);
+    console.log(`[fixloop] draft pull request created: ${pr.html_url}`);
     return pr;
   } catch (error) {
-    console.error('[kiro-heal] GitHub PR creation failed:', error.message);
+    console.error('[fixloop] GitHub PR creation failed:', error.message);
     return null;
   }
 }
 
 /**
- * Closed-loop: run → fail → heal → re-run until pass or max heal cycles.
- * On success, opens a PR only when KIRO_HEAL_OPEN_PR=1 and GitHub credentials are set.
+ * Closed-loop: fail → heal → re-run until pass or max heal cycles.
+ * Does not open a PR — the pipeline opens a draft PR only after a green re-run.
  */
 export async function healLoop({
   runTest,
   resolveTarget,
   repoRoot,
   maxHealAttempts = 5,
-  github,
   allowlist,
   healTarget,
+  skipInitialRun = false,
+  initialResult = null,
 }) {
   let healCount = 0;
-  let lastResult = null;
-  let lastHealedTarget = null;
+  let lastResult = initialResult;
+  let firstSkipped = Boolean(skipInitialRun && initialResult);
 
   while (true) {
-    console.log(
-      `[kiro-heal] Kane verification${healCount > 0 ? ` (after heal #${healCount})` : ''}…`,
-    );
-
-    lastResult = await runTest();
+    if (firstSkipped) {
+      firstSkipped = false;
+      lastResult = initialResult;
+    } else {
+      console.log(
+        `[fixloop] verification${healCount > 0 ? ` (after heal #${healCount})` : ''}…`,
+      );
+      lastResult = await runTest();
+    }
 
     if (lastResult.outcome === 'passed') {
-      console.log('[kiro-heal] ✓ Kane verification passed.');
-
-      if (healCount > 0 && lastHealedTarget && shouldOpenAutomatedPr()) {
-        const owner = github?.owner ?? process.env.GITHUB_OWNER;
-        const repo = github?.repo ?? process.env.GITHUB_REPO;
-
-        if (owner && repo) {
-          const absPath = path.isAbsolute(lastHealedTarget)
-            ? lastHealedTarget
-            : path.join(repoRoot, lastHealedTarget);
-          const correctedCode = await fs.readFile(absPath, 'utf8');
-          const failureReport = formatFailureBlock(lastResult);
-
-          await createSelfHealedPR({
-            owner,
-            repo,
-            branchName: STABLE_AUTO_FIX_BRANCH,
-            filename: path.relative(repoRoot, absPath),
-            correctedCode,
-            failureReport,
-            baseBranch: github?.baseBranch ?? 'main',
-          });
-        }
-      }
-
+      console.log('[fixloop] ✓ verification passed.');
       return { passed: true, healCount, lastResult, attempts: healCount + 1 };
     }
 
     const target = await resolveTarget();
     if (!target) {
       console.error(
-        '[kiro-heal] test failed but no heal target. Set healTarget in .kiro-heal.json or --target.',
+        '[fixloop] test failed but no heal target. Set healTarget in .fixloop.json or --target.',
       );
       return { passed: false, healCount, lastResult, attempts: healCount + 1 };
     }
 
     if (healCount >= maxHealAttempts) {
-      console.error(`[kiro-heal] max heal attempts (${maxHealAttempts}) reached.`);
+      console.error(`[fixloop] max heal attempts (${maxHealAttempts}) reached.`);
       return { passed: false, healCount, lastResult, attempts: healCount + 1 };
     }
 
@@ -381,7 +361,14 @@ export async function healLoop({
       allowlist,
       healTarget,
     });
-    lastHealedTarget = target;
     healCount += 1;
   }
+}
+
+/**
+ * Restore the example CTA handler (used by tests and `fixloop start`).
+ * @param {string} filePath
+ */
+export async function restoreHealTarget(filePath) {
+  await fs.writeFile(filePath, WORKING_MAIN_JS, 'utf8');
 }

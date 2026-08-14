@@ -4,6 +4,7 @@ import path from 'node:path';
 import ndjson from 'ndjson';
 import { ingestEvent, finalizeAccumulator, createAccumulator } from './parser.js';
 import { simulateKaneRun, isKaneAuthenticated } from './simulator.js';
+import { envOn } from './flags.js';
 
 const DEFAULT_KANE_BIN = 'kane-cli';
 
@@ -42,12 +43,14 @@ export function resolveKaneBin(cwd = process.cwd(), explicit = process.env.KANE_
  * @param {string} [kaneBin]
  */
 export async function shouldUseSimulator(kaneBin = process.env.KANE_CLI_BIN ?? DEFAULT_KANE_BIN) {
-  if (process.env.KIRO_HEAL_SIMULATE_KANE === '1') return true;
-  if (process.env.KIRO_HEAL_SIMULATE_KANE === '0') return false;
+  if (envOn('SIMULATE') || envOn('SIMULATE_KANE')) return true;
+  if (process.env.FIXLOOP_SIMULATE === '0' || process.env.KIRO_HEAL_SIMULATE_KANE === '0') {
+    return false;
+  }
   if (kaneAuthCache[kaneBin] !== undefined) return !kaneAuthCache[kaneBin];
   kaneAuthCache[kaneBin] = await isKaneAuthenticated(kaneBin);
   if (!kaneAuthCache[kaneBin]) {
-    console.log('[kiro-heal] Kane CLI not authenticated — using offline simulator (set KIRO_HEAL_SIMULATE_KANE=0 to disable)');
+    console.log('[fixloop] Kane CLI not authenticated — using fixture oracle (set FIXLOOP_SIMULATE=0 to disable)');
   }
   return !kaneAuthCache[kaneBin];
 }
@@ -99,7 +102,7 @@ export async function runKaneTest(options) {
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk) => {
       onRaw?.(chunk, 'stderr');
-      if (process.env.KIRO_HEAL_LOG_STDERR === '1') {
+      if (envOn('LOG_STDERR')) {
         process.stderr.write(chunk);
       }
     });
@@ -132,13 +135,13 @@ export function logKaneEvent(event) {
   if (event.type === 'run_end') {
     const icon = event.status === 'passed' ? '✓' : '✗';
     console.log(
-      `[kiro-heal] ${icon} run_end: ${event.status} — ${event.summary ?? event.reason ?? ''}`,
+      `[fixloop] ${icon} run_end: ${event.status} — ${event.summary ?? event.reason ?? ''}`,
     );
     return;
   }
 
   if (typeof event.step === 'number') {
     const icon = event.status === 'passed' ? '·' : '!';
-    console.log(`[kiro-heal] ${icon} step ${event.step} ${event.status}: ${event.remark ?? ''}`);
+    console.log(`[fixloop] ${icon} step ${event.step} ${event.status}: ${event.remark ?? ''}`);
   }
 }

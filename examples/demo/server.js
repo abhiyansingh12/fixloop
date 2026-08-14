@@ -77,5 +77,5 @@ const server = http.createServer(async (req, res) => {
 
 const port = Number(process.env.PORT ?? 3000);
 server.listen(port, () => {
-  console.log(`[kiro-heal demo] http://localhost:${port}`);
+  console.log(`[fixloop example] http://localhost:${port}`);
 });

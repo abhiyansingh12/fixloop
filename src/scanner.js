@@ -20,6 +20,7 @@ export { fileToRoute } from './routes.js';
  */
 export async function scanStaticPages(repoRoot) {
   const candidates = [
+    path.join(repoRoot, 'examples/demo/public'),
     path.join(repoRoot, 'demo/public'),
     path.join(repoRoot, 'public'),
     path.join(repoRoot, 'static'),
@@ -90,8 +91,8 @@ async function llmComplete(prompt) {
 
   if (!apiUrl) return null;
 
-  const apiKey = process.env.KIRO_HEAL_API_KEY ?? process.env.OPENAI_API_KEY ?? '';
-  const model = process.env.KIRO_HEAL_MODEL ?? 'gpt-4o-mini';
+  const apiKey = process.env.FIXLOOP_API_KEY ?? process.env.KIRO_HEAL_API_KEY ?? process.env.OPENAI_API_KEY ?? '';
+  const model = process.env.FIXLOOP_MODEL ?? process.env.KIRO_HEAL_MODEL ?? 'gpt-4o-mini';
 
   const res = await fetch(apiUrl, {
     method: 'POST',
@@ -190,7 +191,7 @@ export function buildTestmdFromRoutes(routes, baseUrl = 'http://localhost:3000')
     'mode: testing',
     '---',
     '',
-    '# kiro-heal auto-scaffolded smoke flow',
+    '# fixloop auto-scaffolded smoke flow',
     '',
   ];
 
@@ -286,6 +287,12 @@ export async function detectFramework(repoRoot) {
     // no package.json
   }
 
+  try {
+    await fs.access(path.join(repoRoot, 'examples/demo/server.js'));
+    return 'static-demo';
+  } catch {
+    // continue
+  }
   try {
     await fs.access(path.join(repoRoot, 'demo/server.js'));
     return 'static-demo';

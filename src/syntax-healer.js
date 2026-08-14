@@ -94,7 +94,7 @@ export async function validateFile(filePath, cwd) {
     return { valid: false, error: syntax.error, type: 'syntax' };
   }
 
-  if (process.env.KIRO_HEAL_RUNTIME_CHECK === '1') {
+  if (process.env.FIXLOOP_RUNTIME_CHECK === '1' || process.env.KIRO_HEAL_RUNTIME_CHECK === '1') {
     const runtime = await checkRuntime(filePath, cwd);
     if (!runtime.valid) {
       return { valid: false, error: runtime.error, type: 'runtime' };
@@ -143,13 +143,13 @@ export async function healSyntaxError(opts) {
   try {
     sourceCode = await fs.readFile(filePath, 'utf8');
   } catch (err) {
-    console.error(`[kiro-heal:syntax] cannot read ${filePath}: ${err.message}`);
+    console.error(`[fixloop:syntax] cannot read ${filePath}: ${err.message}`);
     return { healed: false, attempts: 0 };
   }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(
-      `[kiro-heal:syntax] healing ${errorType} error in ${path.relative(repoRoot, filePath)} (attempt ${attempt})…`,
+      `[fixloop:syntax] healing ${errorType} error in ${path.relative(repoRoot, filePath)} (attempt ${attempt})…`,
     );
 
     // Try local pattern-based fixes first
@@ -157,7 +157,7 @@ export async function healSyntaxError(opts) {
     let fixedCode;
 
     if (localFix) {
-      console.log('[kiro-heal:syntax] applied local pattern fix');
+      console.log('[fixloop:syntax] applied local pattern fix');
       fixedCode = localFix;
     } else {
       // Fall back to LLM
@@ -170,7 +170,7 @@ export async function healSyntaxError(opts) {
         };
         fixedCode = await requestFix(filePath, sourceCode, parseResult, prompt);
       } catch (err) {
-        console.error(`[kiro-heal:syntax] LLM heal failed: ${err.message}`);
+        console.error(`[fixloop:syntax] LLM heal failed: ${err.message}`);
         return { healed: false, attempts: attempt };
       }
     }
@@ -182,14 +182,14 @@ export async function healSyntaxError(opts) {
     // Re-validate
     const recheck = await validateFile(filePath, repoRoot);
     if (recheck.valid) {
-      console.log(`[kiro-heal:syntax] ✓ ${path.relative(repoRoot, filePath)} healed after ${attempt} attempt(s)`);
+      console.log(`[fixloop:syntax] ✓ ${path.relative(repoRoot, filePath)} healed after ${attempt} attempt(s)`);
       return { healed: true, attempts: attempt };
     }
 
-    console.log(`[kiro-heal:syntax] still broken after attempt ${attempt}: ${recheck.error?.slice(0, 200)}`);
+    console.log(`[fixloop:syntax] still broken after attempt ${attempt}: ${recheck.error?.slice(0, 200)}`);
   }
 
-  console.error(`[kiro-heal:syntax] max attempts reached — could not fix ${path.relative(repoRoot, filePath)}`);
+  console.error(`[fixloop:syntax] max attempts reached — could not fix ${path.relative(repoRoot, filePath)}`);
   return { healed: false, attempts: maxAttempts };
 }
 
@@ -217,7 +217,7 @@ function tryLocalSyntaxFix(source, errorOutput, errorType) {
         const regex = new RegExp(`\\b${escapeRegex(badName)}\\b`, 'g');
         const fixed = source.replace(regex, def);
         if (fixed !== source) {
-          console.log(`[kiro-heal:syntax] local fix: ${badName} → ${def}`);
+          console.log(`[fixloop:syntax] local fix: ${badName} → ${def}`);
           return fixed;
         }
       }
@@ -269,9 +269,9 @@ export async function syntaxHealPipeline(opts) {
   }
 
   console.log(
-    `[kiro-heal:syntax] ${validation.type} error detected in ${path.relative(repoRoot, filePath)}`,
+    `[fixloop:syntax] ${validation.type} error detected in ${path.relative(repoRoot, filePath)}`,
   );
-  console.log(`[kiro-heal:syntax] ${validation.error?.slice(0, 300)}`);
+  console.log(`[fixloop:syntax] ${validation.error?.slice(0, 300)}`);
 
   const result = await healSyntaxError({
     filePath,

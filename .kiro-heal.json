@@ -1,9 +1,0 @@
-{
-  "baseUrl": "http://localhost:3000",
-  "testFile": ".kiro-heal/smoke.testmd",
-  "healTarget": "demo/public/js/main.js",
-  "demoServer": "demo/server.js",
-  "maxHeal": 5,
-  "kaneTimeout": 180,
-  "debounceMs": 1200
-}

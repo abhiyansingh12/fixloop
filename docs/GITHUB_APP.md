@@ -1,29 +1,30 @@
-# GitHub Auto-Verification Bot
+# GitHub App (optional)
 
-kiro-heal runs **locally** (CLI) and as a **GitHub App** (webhooks). Both paths use the same pipeline: scan → Kane tests → verify → heal → re-verify → PR.
+The OSS install path is the **GitHub Action** (`templates/github/fixloop.yml`). A hosted App from a hackathon repo is not the product. This document is the secondary webhook server if you already have App credentials.
+
+fixloop’s rule is the same on every path: triage → patch only on `product_regression` → re-run the same command → **draft PR only if green**. Still red → no PR. `test_defect` → “update the test, I will not.”
 
 ## Architecture
 
 ```
 GitHub repo
     │
-    ├─► Webhook (repository_dispatch / comment / push*)
-    │         └─► kiro-heal github serve
-    │                   └─► clone → detect → Kane → heal → PR
+    ├─► GitHub Action (primary): Playwright red → fixloop/action
     │
-    └─► Local CLI (kiro-heal start / run / watch)
-              └─► same pipeline on your machine
+    ├─► Webhook (optional): repository_dispatch / comment / push*
+    │         └─► fixloop github serve
+    │                   └─► clone → Playwright/fixture → triage → heal → re-run → draft PR if green
+    │
+    └─► Local CLI (npx fixloop run)
 ```
 
-\* Push auto-verify only when `KIRO_HEAL_GITHUB_AUTO_PUSH=1`.
+\* Push auto-verify only when `FIXLOOP_GITHUB_AUTO_PUSH=1`.
 
-`/kiro-heal verify` comments are accepted only from **OWNER**, **MEMBER**, or **COLLABORATOR**. Unknown users cannot trigger a clone + heal.
+`/fixloop verify` comments are accepted only from **OWNER**, **MEMBER**, or **COLLABORATOR**.
 
-The bot reuses a single `kiro-heal/verify` branch (and an existing open bot PR) instead of opening a new PR on every run.
+The bot reuses a single `fixloop/verify` branch (and an existing open bot PR) instead of opening a new PR on every run. PRs are **draft**. There is **no auto-merge**.
 
-Automated PRs from the **local** CLI/watchdog are off unless `KIRO_HEAL_OPEN_PR=1`.
-
-Cloned repos get a full `npm ci` / `pnpm install` / `yarn install` (devDependencies included). The boot command prefers `package.json` scripts `dev` → `start` → `preview` → `serve`, and rewrites `--port` to an ephemeral port. See [SECURITY.md](../SECURITY.md).
+Automated PRs from the **local** CLI/watchdog are off unless `FIXLOOP_OPEN_PR=1`.
 
 ## 1. Create a GitHub App
 
@@ -52,14 +53,14 @@ Copy `.env.example` and set:
 GITHUB_APP_ID=123456
 GITHUB_APP_PRIVATE_KEY_PATH=./github-app.pem
 GITHUB_WEBHOOK_SECRET=your-webhook-secret
-KIRO_HEAL_GITHUB_PORT=3939
+FIXLOOP_GITHUB_PORT=3939
 ```
 
 For local verify without the App (PAT only):
 
 ```bash
 GITHUB_TOKEN=ghp_...
-kiro-heal github verify --repo your-org/your-repo --no-pr
+npx fixloop github verify --repo your-org/your-repo --no-pr
 ```
 
 ## 3. Run the webhook server
@@ -69,50 +70,44 @@ npm install
 npm run github:serve
 ```
 
-Expose with ngrok or deploy to Railway/Fly/Render:
-
-```bash
-ngrok http 3939
-```
-
-Update the GitHub App webhook URL to the public URL.
+Expose with ngrok or deploy, then update the GitHub App webhook URL.
 
 ## 4. Trigger verification
 
-### Repository dispatch (recommended)
+### Repository dispatch
 
 ```bash
 gh api repos/OWNER/REPO/dispatches \
-  -f event_type=kiro-heal-verify \
+  -f event_type=fixloop-verify \
   -f client_payload='{"ref":"main"}'
 ```
 
+Legacy event type `kiro-heal-verify` is still accepted.
+
 ### Issue comment
 
-Comment on any issue:
-
 ```
-/kiro-heal verify
+/fixloop verify
 ```
 
-### CLI (manual)
+`/kiro-heal verify` still matches.
+
+### CLI
 
 ```bash
-kiro-heal github verify --repo owner/repo --installation-id 12345678
+npx fixloop github verify --repo owner/repo --installation-id 12345678
 ```
 
-## 5. What the bot creates
+## 5. What the bot creates (only if the re-run is green)
 
-- `.kiro-heal/smoke.testmd` — Kane tests from discovered routes & flows
-- `.kiro-heal/verification-report.md` — pass/fail report
-- `.kiro-heal/analysis.json` — structured metadata
-- Healed source files (when the heal loop fixes regressions)
-- **Pull request** on branch `kiro-heal/verify-<timestamp>`
+- `.fixloop/smoke.testmd`
+- `.fixloop/verification-report.md`
+- `.fixloop/analysis.json`
+- Healed source files (product_regression only)
+- **Draft** pull request on `fixloop/verify`
 
-## Flow discovery
+If the suite is still red, Fixloop comments the triage and **does not open a PR**.
 
-Routes are scanned from Next.js, Vite, and static HTML layouts. Paths are tagged as `login`, `signup`, `dashboard`, `checkout`, `settings`, `search`, `crud`, or `navigation` for richer Kane steps.
+## Prefer the Action
 
-## CI without hosted bot
-
-Copy `templates/github/kiro-heal-verify.yml` to `.github/workflows/` in target repos, or run `kiro-heal run` in your own Actions job.
+Copy `templates/github/fixloop.yml` into the target repo. That is the install path strangers will actually use.

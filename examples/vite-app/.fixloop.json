@@ -1,0 +1,6 @@
+{
+  "oracle": "playwright",
+  "healTarget": "src/main.js",
+  "playwrightCommand": "npx playwright test",
+  "baseUrl": "http://localhost:5173"
+}

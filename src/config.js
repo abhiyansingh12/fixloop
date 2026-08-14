@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { env, envOn } from './flags.js';
 
-const CONFIG_NAMES = ['.kiro-heal.json', 'kiro-heal.json'];
+const CONFIG_NAMES = ['.fixloop.json', 'fixloop.json', '.kiro-heal.json', 'kiro-heal.json'];
 
 /**
- * @typedef {object} KiroHealConfig
+ * @typedef {object} FixloopConfig
  * @property {string} baseUrl
  * @property {string} testFile
  * @property {string} healTarget
@@ -15,15 +16,21 @@ const CONFIG_NAMES = ['.kiro-heal.json', 'kiro-heal.json'];
  * @property {boolean} [demoBroken]
  * @property {string[]} [healAllowlist]
  * @property {string} [fixtureFile]
+ * @property {'playwright'|'kane'|'fixture'} [oracle]
+ * @property {string} [playwrightCommand]
+ * @property {string} [playwrightReport]
  */
 
-/** @type {KiroHealConfig} */
+/** @type {FixloopConfig} */
 export const DEFAULT_CONFIG = {
-  baseUrl: 'http://localhost:3000',
-  testFile: '.kiro-heal/smoke.testmd',
-  healTarget: 'demo/public/js/main.js',
-  demoServer: 'demo/server.js',
-  maxHeal: 5,
+  oracle: 'playwright',
+  playwrightCommand: 'npx playwright test',
+  playwrightReport: 'test-results/fixloop.json',
+  baseUrl: 'http://localhost:5173',
+  testFile: '.fixloop/smoke.testmd',
+  healTarget: 'src/main.js',
+  demoServer: null,
+  maxHeal: 3,
   kaneTimeout: 180,
   debounceMs: 1200,
   healAllowlist: [
@@ -32,17 +39,18 @@ export const DEFAULT_CONFIG = {
     'pages/**',
     'public/**',
     'demo/**',
+    'examples/**',
     'components/**',
     'lib/**',
     'routes/**',
   ],
-  fixtureFile: '.kiro-heal/fixture.json',
+  fixtureFile: '.fixloop/fixture.json',
   demoBroken: false,
 };
 
 /**
  * @param {string} repoRoot
- * @returns {Promise<KiroHealConfig>}
+ * @returns {Promise<FixloopConfig>}
  */
 export async function loadConfig(repoRoot) {
   let fileConfig = {};
@@ -57,50 +65,75 @@ export async function loadConfig(repoRoot) {
     }
   }
 
+  const demoBrokenEnv = env('DEMO_BROKEN');
+
   return {
     ...DEFAULT_CONFIG,
     ...fileConfig,
-    baseUrl: process.env.KIRO_HEAL_BASE_URL ?? fileConfig.baseUrl ?? DEFAULT_CONFIG.baseUrl,
-    testFile: process.env.KIRO_HEAL_TEST ?? fileConfig.testFile ?? DEFAULT_CONFIG.testFile,
-    healTarget:
-      process.env.KIRO_HEAL_TARGET ?? fileConfig.healTarget ?? DEFAULT_CONFIG.healTarget,
-    maxHeal: Number(process.env.KIRO_HEAL_MAX ?? fileConfig.maxHeal ?? DEFAULT_CONFIG.maxHeal),
-    kaneTimeout: Number(
-      process.env.KIRO_HEAL_TIMEOUT ?? fileConfig.kaneTimeout ?? DEFAULT_CONFIG.kaneTimeout,
+    oracle: env('ORACLE', fileConfig.oracle ?? DEFAULT_CONFIG.oracle),
+    playwrightCommand: env(
+      'PLAYWRIGHT_COMMAND',
+      fileConfig.playwrightCommand ?? DEFAULT_CONFIG.playwrightCommand,
     ),
-    debounceMs: Number(
-      process.env.KIRO_HEAL_DEBOUNCE ?? fileConfig.debounceMs ?? DEFAULT_CONFIG.debounceMs,
+    playwrightReport: env(
+      'PLAYWRIGHT_REPORT',
+      fileConfig.playwrightReport ?? DEFAULT_CONFIG.playwrightReport,
     ),
+    baseUrl: env('BASE_URL', fileConfig.baseUrl ?? DEFAULT_CONFIG.baseUrl),
+    testFile: env('TEST', fileConfig.testFile ?? DEFAULT_CONFIG.testFile),
+    healTarget: env('TARGET', fileConfig.healTarget ?? DEFAULT_CONFIG.healTarget),
+    maxHeal: Number(env('MAX', fileConfig.maxHeal ?? DEFAULT_CONFIG.maxHeal)),
+    kaneTimeout: Number(env('TIMEOUT', fileConfig.kaneTimeout ?? DEFAULT_CONFIG.kaneTimeout)),
+    debounceMs: Number(env('DEBOUNCE', fileConfig.debounceMs ?? DEFAULT_CONFIG.debounceMs)),
     healAllowlist: Array.isArray(fileConfig.healAllowlist)
       ? fileConfig.healAllowlist
       : DEFAULT_CONFIG.healAllowlist,
-    fixtureFile: process.env.KIRO_HEAL_FIXTURE ?? fileConfig.fixtureFile ?? DEFAULT_CONFIG.fixtureFile,
+    fixtureFile: env('FIXTURE', fileConfig.fixtureFile ?? DEFAULT_CONFIG.fixtureFile),
     demoBroken:
-      process.env.KIRO_HEAL_DEMO_BROKEN === '1'
+      demoBrokenEnv === '1'
         ? true
-        : process.env.KIRO_HEAL_DEMO_BROKEN === '0'
+        : demoBrokenEnv === '0'
           ? false
           : Boolean(fileConfig.demoBroken ?? DEFAULT_CONFIG.demoBroken),
+    demoServer:
+      fileConfig.demoServer !== undefined ? fileConfig.demoServer : DEFAULT_CONFIG.demoServer,
   };
 }
 
 /**
  * @param {string} repoRoot
- * @param {KiroHealConfig} config
+ * @param {FixloopConfig} config
  */
 export function resolvePaths(repoRoot, config) {
+  const cfg = { ...DEFAULT_CONFIG, ...config };
   return {
     repoRoot,
-    testFile: path.isAbsolute(config.testFile)
-      ? config.testFile
-      : path.join(repoRoot, config.testFile),
-    healTarget: path.isAbsolute(config.healTarget)
-      ? config.healTarget
-      : path.join(repoRoot, config.healTarget),
-    demoServer: config.demoServer
-      ? path.isAbsolute(config.demoServer)
-        ? config.demoServer
-        : path.join(repoRoot, config.demoServer)
+    testFile: path.isAbsolute(cfg.testFile)
+      ? cfg.testFile
+      : path.join(repoRoot, cfg.testFile),
+    healTarget: path.isAbsolute(cfg.healTarget)
+      ? cfg.healTarget
+      : path.join(repoRoot, cfg.healTarget),
+    demoServer: cfg.demoServer
+      ? path.isAbsolute(cfg.demoServer)
+        ? cfg.demoServer
+        : path.join(repoRoot, cfg.demoServer)
       : null,
+    playwrightReport: path.isAbsolute(cfg.playwrightReport)
+      ? cfg.playwrightReport
+      : path.join(repoRoot, cfg.playwrightReport),
   };
 }
+
+/**
+ * Write `.fixloop.json` at the repo root.
+ * @param {string} repoRoot
+ * @param {Partial<FixloopConfig>} config
+ */
+export async function saveConfig(repoRoot, config) {
+  const dest = path.join(repoRoot, '.fixloop.json');
+  await fs.writeFile(dest, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  return dest;
+}
+
+export { envOn };

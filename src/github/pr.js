@@ -37,7 +37,9 @@ export async function createVerificationPullRequest(opts) {
     per_page: 30,
   });
   const existing = openPrs.find(
-    (pr) => isHealBotPullRequest(pr) && pr.head?.ref?.startsWith('kiro-heal/verify'),
+    (pr) =>
+      isHealBotPullRequest(pr) &&
+      (pr.head?.ref?.startsWith('fixloop/verify') || pr.head?.ref?.startsWith('kiro-heal/verify')),
   );
   const branch = existing?.head?.ref ?? STABLE_VERIFY_BRANCH;
   const baseSha = await getHeadSha(octokit, owner, repo, baseBranch);
@@ -58,8 +60,8 @@ export async function createVerificationPullRequest(opts) {
 
   const filesToCommit = new Map();
 
-  const reportPath = '.kiro-heal/verification-report.md';
-  const analysisPath = '.kiro-heal/analysis.json';
+  const reportPath = '.fixloop/verification-report.md';
+  const analysisPath = '.fixloop/analysis.json';
   filesToCommit.set(reportPath, reportMarkdown);
   filesToCommit.set(analysisPath, analysisJson);
 
@@ -75,9 +77,9 @@ export async function createVerificationPullRequest(opts) {
   }
 
   try {
-    const testmd = path.join(repoRoot, '.kiro-heal/smoke.testmd');
+    const testmd = path.join(repoRoot, '.fixloop/smoke.testmd');
     const testContent = await fs.readFile(testmd, 'utf8');
-    filesToCommit.set('.kiro-heal/smoke.testmd', testContent);
+    filesToCommit.set('.fixloop/smoke.testmd', testContent);
   } catch {
     // optional
   }
@@ -95,7 +97,7 @@ export async function createVerificationPullRequest(opts) {
       owner,
       repo,
       path: filePath,
-      message: `chore(kiro-heal): update ${filePath}`,
+      message: `fixloop: update ${filePath}`,
       content: Buffer.from(content, 'utf8').toString('base64'),
       branch,
       ...(sha ? { sha } : {}),
@@ -103,10 +105,10 @@ export async function createVerificationPullRequest(opts) {
   }
 
   const title = passed
-    ? 'chore(kiro-heal): verification passed — Kane tests & report'
-    : 'chore(kiro-heal): verification findings — tests, fixes & report';
+    ? 'fixloop: verified product regression fix'
+    : 'fixloop: verification findings (suite still red — do not merge)';
 
-  const body = `${reportMarkdown}\n\n---\n\n### Next steps\n\n- Review generated \`.kiro-heal/smoke.testmd\` Kane tests\n- Merge when CI / Kane verification is green\n- Re-run verification: \`repository_dispatch\` event \`kiro-heal-verify\` or comment \`/kiro-heal verify\` on an issue`;
+  const body = `${reportMarkdown}\n\n---\n\n### Next steps\n\n- Re-run passed after patch is required before this PR exists on the Action path.\n- Draft only. No auto-merge.\n- Comment \`/fixloop verify\` (collaborators only) or drop in \`templates/github/fixloop.yml\`.`;
 
   if (existing) {
     await octokit.pulls.update({
@@ -126,6 +128,7 @@ export async function createVerificationPullRequest(opts) {
     head: branch,
     base: baseBranch,
     body,
+    draft: true,
   });
 
   return { pr, branch, ref: refData, reused: false };

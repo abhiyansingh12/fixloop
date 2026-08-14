@@ -6,6 +6,7 @@ export const DEFAULT_HEAL_ALLOWLIST = [
   'pages/**',
   'public/**',
   'demo/**',
+  'examples/**',
   'components/**',
   'lib/**',
   'routes/**',
@@ -24,6 +25,7 @@ export const DEFAULT_HEAL_DENYLIST = [
   '**/package-lock.json',
   '**/pnpm-lock.yaml',
   '**/yarn.lock',
+  '**/.fixloop/**',
   '**/.kiro-heal/**',
 ];
 
@@ -106,7 +108,7 @@ export function assertHealPathAllowed(
   const allowed = [...allowlist, ...extra];
   if (allowed.length > 0 && !matchesAny(rel, allowed) && !allowed.includes(rel)) {
     throw new Error(
-      `Heal path is outside the allowlist: ${rel}. Add it to healAllowlist in .kiro-heal.json.`,
+      `Heal path is outside the allowlist: ${rel}. Add it to healAllowlist in .fixloop.json.`,
     );
   }
 

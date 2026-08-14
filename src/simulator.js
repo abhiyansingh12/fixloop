@@ -14,7 +14,7 @@ import { evaluateFixture, loadFixture } from './fixture.js';
 export async function simulateKaneRun(options) {
   const { cwd, onEvent, targetRel, fixturePath } = options;
   const fixture = await loadFixture(cwd, fixturePath);
-  const rel = targetRel ?? process.env.KIRO_HEAL_TARGET ?? fixture.target ?? 'demo/public/js/main.js';
+  const rel = targetRel ?? process.env.FIXLOOP_TARGET ?? process.env.KIRO_HEAL_TARGET ?? fixture.target ?? 'examples/demo/public/js/main.js';
   const targetPath = path.isAbsolute(rel) ? rel : path.join(cwd, rel);
 
   let source = '';

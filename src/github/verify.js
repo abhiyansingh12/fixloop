@@ -53,7 +53,7 @@ export async function verifyGitHubRepository(options) {
     `${owner}-${repo}-${Date.now()}`,
   );
 
-  log(`[kiro-heal:github] cloning ${owner}/${repo}@${baseBranch}…`);
+  log(`[fixloop:github] cloning ${owner}/${repo}@${baseBranch}…`);
 
   try {
     await cloneRepository({
@@ -64,26 +64,26 @@ export async function verifyGitHubRepository(options) {
       ref: baseBranch,
     });
 
-    log('[kiro-heal:github] installing dependencies…');
+    log('[fixloop:github] installing dependencies…');
     await installDependencies(workDir);
 
     const runtime = await detectRuntime(workDir);
-    log(`[kiro-heal:github] framework=${runtime.framework} routes=${runtime.routes.length}`);
+    log(`[fixloop:github] framework=${runtime.framework} routes=${runtime.routes.length}`);
 
     const port = 3000 + Math.floor(Math.random() * 2000);
     const server = await startRepoServer(runtime, workDir, port);
     const config = runtimeConfigForGitHub(runtime, port);
 
     try {
-      log('[kiro-heal:github] scaffolding Kane tests…');
+      log('[fixloop:github] scaffolding smoke tests…');
       await initProject(workDir, config);
 
-      log('[kiro-heal:github] running verification + heal loop…');
+      log('[fixloop:github] triage → heal (product_regression only) → re-run…');
       const outcome = await runPipeline({
         repoRoot: workDir,
         config,
         enableHeal: true,
-        checkKane: true,
+        issueNumber: options.issueNumber,
       });
 
       const changedFiles = await collectGitChanges(workDir, runtime.healTarget);
@@ -97,6 +97,8 @@ export async function verifyGitHubRepository(options) {
         framework: runtime.framework,
         baseUrl: config.baseUrl,
         changedFiles,
+        triage: outcome.triage,
+        verified: outcome.verified,
       });
 
       const analysisJson = buildAnalysisJson({
@@ -109,23 +111,28 @@ export async function verifyGitHubRepository(options) {
         routes: runtime.routes,
         flows: runtime.flows,
         changedFiles,
+        triage: outcome.triage,
+        verified: outcome.verified,
       });
 
-      await fs.mkdir(path.join(workDir, '.kiro-heal'), { recursive: true });
+      await fs.mkdir(path.join(workDir, '.fixloop'), { recursive: true });
       await fs.writeFile(
-        path.join(workDir, '.kiro-heal/verification-report.md'),
+        path.join(workDir, '.fixloop/verification-report.md'),
         reportMarkdown,
         'utf8',
       );
-      await fs.writeFile(path.join(workDir, '.kiro-heal/analysis.json'), analysisJson, 'utf8');
+      await fs.writeFile(path.join(workDir, '.fixloop/analysis.json'), analysisJson, 'utf8');
 
       let prUrl = null;
-      if (options.openPr !== false) {
-        log('[kiro-heal:github] opening pull request…');
+      const mayOpenPr = options.openPr !== false && outcome.verified && outcome.passed;
+      if (!outcome.passed) {
+        log('[fixloop:github] re-run still red — not opening a PR');
+      } else if (mayOpenPr) {
+        log('[fixloop:github] opening draft pull request…');
         const extraPaths = [
-          '.kiro-heal/smoke.testmd',
-          '.kiro-heal/verification-report.md',
-          '.kiro-heal/analysis.json',
+          '.fixloop/smoke.testmd',
+          '.fixloop/verification-report.md',
+          '.fixloop/analysis.json',
           runtime.healTarget,
         ];
         const { pr } = await createVerificationPullRequest({
@@ -140,13 +147,15 @@ export async function verifyGitHubRepository(options) {
           extraPaths,
         });
         prUrl = pr.html_url;
-        log(`[kiro-heal:github] PR: ${prUrl}`);
+        log(`[fixloop:github] draft PR: ${prUrl}`);
       }
 
       if (options.issueNumber) {
         const summary = outcome.passed
-          ? '✅ **Kiro Heal verification passed.**'
-          : '❌ **Kiro Heal verification failed.** See report in the linked PR.';
+          ? '**fixloop:** re-run passed after patch (draft PR, not merged).'
+          : outcome.triage?.label === 'test_defect'
+            ? '**fixloop:** `test_defect` — update the test, I will not.'
+            : '**fixloop:** suite still red — not opening a PR.';
         await postComment(
           octokit,
           owner,
@@ -164,6 +173,8 @@ export async function verifyGitHubRepository(options) {
         prUrl,
         framework: runtime.framework,
         flows: runtime.flows,
+        verified: outcome.verified,
+        triage: outcome.triage,
       };
     } finally {
       await server.stop();
@@ -179,9 +190,9 @@ export async function verifyGitHubRepository(options) {
  */
 async function collectGitChanges(workDir, healTarget) {
   const paths = [
-    '.kiro-heal/smoke.testmd',
-    '.kiro-heal/verification-report.md',
-    '.kiro-heal/analysis.json',
+    '.fixloop/smoke.testmd',
+    '.fixloop/verification-report.md',
+    '.fixloop/analysis.json',
     healTarget,
   ];
   const existing = [];

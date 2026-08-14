@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * kiro-heal watchdog — monitors project files for syntax errors and self-heals them.
+ * fixloop watchdog — monitors project files for syntax errors and self-heals them.
  *
  * Runs as a separate process so it can heal files that would otherwise
- * crash the main kiro-heal watcher.
+ * crash the main fixloop watcher.
  *
  * Usage:
  *   node bin/watchdog.js [--dir /path/to/project]
@@ -120,15 +120,16 @@ function tryLocalFix(source, errorOutput, filePath) {
 // ─── LLM Heal Fallback ──────────────────────────────────────────────────────
 
 async function llmHeal(filePath, source, errorOutput) {
-  const apiUrl = process.env.KIRO_HEAL_API_URL;
-  const apiKey = process.env.KIRO_HEAL_API_KEY ?? process.env.OPENAI_API_KEY;
+  const apiUrl = process.env.FIXLOOP_API_URL ?? process.env.KIRO_HEAL_API_URL;
+  const apiKey =
+    process.env.FIXLOOP_API_KEY ?? process.env.KIRO_HEAL_API_KEY ?? process.env.OPENAI_API_KEY;
 
   if (!apiUrl || !apiKey) {
     console.log('[watchdog] no LLM API configured — skipping remote heal');
     return null;
   }
 
-  const model = process.env.KIRO_HEAL_MODEL ?? 'gpt-4o-mini';
+  const model = process.env.FIXLOOP_MODEL ?? process.env.KIRO_HEAL_MODEL ?? 'gpt-4o-mini';
 
   const prompt = `Fix this Node.js file that has an error.
 
@@ -183,7 +184,7 @@ Return ONLY the complete corrected file content. No explanations.`;
 
 async function createPR(filePath, correctedCode, errorOutput) {
   if (!shouldOpenAutomatedPr()) {
-    console.log('[watchdog] KIRO_HEAL_OPEN_PR is not 1 — skipping PR');
+    console.log('[watchdog] FIXLOOP_OPEN_PR is not 1 — skipping PR');
     return null;
   }
 
@@ -207,7 +208,7 @@ async function createPR(filePath, correctedCode, errorOutput) {
   }
 
   const octokit = new Octokit({ auth: token });
-  const branchName = 'kiro-heal/auto-fix';
+  const branchName = 'fixloop/auto-fix';
   const relPath = path.relative(repoRoot, filePath);
 
   try {
@@ -252,21 +253,22 @@ async function createPR(filePath, correctedCode, errorOutput) {
     // Open PR
     const { data: pr } = await octokit.pulls.create({
       owner, repo,
-      title: `chore(kiro-heal): watchdog auto-fix ${relPath}`,
+      title: `fixloop: watchdog auto-fix ${relPath}`,
       head: branchName,
       base: 'main',
+      draft: true,
       body: [
-        '### kiro-heal watchdog — automatic error fix',
+        '### fixloop watchdog — automatic error fix',
         '',
         `**File:** \`${relPath}\``,
-        '**Status:** Healed ✅',
+        '**Status:** Healed (draft PR, not merged)',
         '',
         '**Original Error:**',
         '```',
         errorOutput.slice(0, 1000),
         '```',
         '',
-        '*This fix was applied automatically by the kiro-heal watchdog. Set KIRO_HEAL_OPEN_PR=1 to enable PRs.*',
+        '*Set FIXLOOP_OPEN_PR=1 to enable PRs. No auto-merge.*',
       ].join('\n'),
     });
 
@@ -358,7 +360,7 @@ async function main() {
   await loadEnv();
 
   console.log('╔══════════════════════════════════════════════════╗');
-  console.log('║   kiro-heal watchdog — self-healing guard        ║');
+  console.log('║   fixloop watchdog — self-healing guard          ║');
   console.log('╠══════════════════════════════════════════════════╣');
   console.log(`║  Watching: ${repoRoot.slice(-38).padEnd(38)}║`);
   console.log('║  Mode: syntax + runtime error detection         ║');

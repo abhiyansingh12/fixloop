@@ -10,6 +10,7 @@ const IGNORE_DIRS = new Set([
   'coverage',
   'output-',
   '.testmuai',
+  '.fixloop',
   '.kiro-heal',
 ]);
 

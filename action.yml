@@ -1,0 +1,29 @@
+name: Fixloop
+description: Triage a red Playwright run. Only product_regression may write code; a still-red re-run never opens a PR.
+author: Fixloop
+branding:
+  icon: refresh-cw
+  color: purple
+inputs:
+  command:
+    description: The same command CI used (default Playwright).
+    required: false
+    default: npx playwright test
+  working-directory:
+    description: App directory that contains .fixloop.json.
+    required: false
+    default: '.'
+runs:
+  using: composite
+  steps:
+    - name: Install Fixloop
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --omit=dev
+    - name: Run Fixloop
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+        GITHUB_REPOSITORY: ${{ env.GITHUB_REPOSITORY }}
+      run: node "${{ github.action_path }}/bin/fixloop.js" ci --command "${{ inputs.command }}"

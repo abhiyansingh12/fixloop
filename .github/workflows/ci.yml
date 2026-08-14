@@ -25,4 +25,6 @@ jobs:
         env:
           KIRO_HEAL_SIMULATE_KANE: '1'
           KIRO_HEAL_OPEN_PR: '0'
+          FIXLOOP_SIMULATE: '1'
+          FIXLOOP_OPEN_PR: '0'
         run: npm test

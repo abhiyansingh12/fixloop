@@ -12,7 +12,7 @@ export const WORKING_MAIN_JS = `/**
 
   cta.addEventListener('click', () => {
     status.textContent =
-      'Pipeline connected. Kane CLI can verify this interaction on the next run.';
+      'Pipeline connected. Playwright can verify this interaction on the next run.';
     status.dataset.state = 'success';
     cta.setAttribute('aria-pressed', 'true');
   });
@@ -20,7 +20,7 @@ export const WORKING_MAIN_JS = `/**
 `;
 
 /**
- * Deterministic fixes for demo regressions (offline hackathon path).
+ * Deterministic fixes for the examples/demo CTA regression.
  * @param {string} absPath
  * @param {string} sourceCode
  * @param {import('./parser.js').ParseResult} parseResult

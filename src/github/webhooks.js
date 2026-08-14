@@ -13,7 +13,7 @@ const inflight = new Set();
  */
 export async function runExclusiveVerify(key, log, fn) {
   if (inflight.has(key)) {
-    log(`[kiro-heal:github] verify already running for ${key} — skipping`);
+    log(`[fixloop:github] verify already running for ${key} — skipping`);
     return { skipped: true };
   }
   inflight.add(key);
@@ -49,11 +49,17 @@ export async function createWebhookHandlers(opts = {}) {
   const webhooks = new Webhooks({ secret: config.webhookSecret });
 
   webhooks.on('installation.created', async ({ payload }) => {
-    log(`[kiro-heal:github] app installed on ${payload.installation.account?.login}`);
+    log(`[fixloop:github] app installed on ${payload.installation.account?.login}`);
   });
 
   webhooks.on('repository_dispatch', async ({ payload }) => {
-    if (payload.action !== config.verifyEventType) return;
+    if (
+      payload.action !== config.verifyEventType &&
+      payload.action !== 'fixloop-verify' &&
+      payload.action !== 'kiro-heal-verify'
+    ) {
+      return;
+    }
 
     const repo = payload.repository;
     const installationId = payload.installation?.id;
@@ -62,7 +68,7 @@ export async function createWebhookHandlers(opts = {}) {
     const owner = repo.owner.login;
     const name = repo.name;
     const key = `${owner}/${name}`;
-    log(`[kiro-heal:github] repository_dispatch ${config.verifyEventType} → ${key}`);
+    log(`[fixloop:github] repository_dispatch ${payload.action} → ${key}`);
 
     void runExclusiveVerify(key, log, () =>
       verifyGitHubRepository({
@@ -73,14 +79,14 @@ export async function createWebhookHandlers(opts = {}) {
         openPr: payload.client_payload?.openPr !== false,
         log,
       }),
-    ).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
+    ).catch((err) => log(`[fixloop:github] verify failed: ${err.message}`));
   });
 
   webhooks.on('issue_comment.created', async ({ payload }) => {
     if (!shouldHandleVerifyComment(payload)) {
       if (isVerifyComment(payload.comment?.body) && !isTrustedCommentAuthor(payload.comment?.author_association)) {
         log(
-          `[kiro-heal:github] ignoring /kiro-heal verify from ${payload.comment?.user?.login} (${payload.comment?.author_association})`,
+          `[fixloop:github] ignoring /fixloop verify from ${payload.comment?.user?.login} (${payload.comment?.author_association})`,
         );
       }
       return;
@@ -88,7 +94,7 @@ export async function createWebhookHandlers(opts = {}) {
 
     const repo = payload.repository;
     const key = repo.full_name;
-    log(`[kiro-heal:github] issue comment verify → ${key}`);
+    log(`[fixloop:github] issue comment verify → ${key}`);
 
     void runExclusiveVerify(key, log, () =>
       verifyGitHubRepository({
@@ -98,7 +104,7 @@ export async function createWebhookHandlers(opts = {}) {
         issueNumber: payload.issue.number,
         log,
       }),
-    ).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
+    ).catch((err) => log(`[fixloop:github] verify failed: ${err.message}`));
   });
 
   webhooks.on('push', async ({ payload }) => {
@@ -110,7 +116,7 @@ export async function createWebhookHandlers(opts = {}) {
 
     const repo = payload.repository;
     const key = repo.full_name;
-    log(`[kiro-heal:github] auto verify on push → ${key}`);
+    log(`[fixloop:github] auto verify on push → ${key}`);
 
     void runExclusiveVerify(key, log, () =>
       verifyGitHubRepository({
@@ -120,7 +126,7 @@ export async function createWebhookHandlers(opts = {}) {
         ref: payload.repository.default_branch,
         log,
       }),
-    ).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
+    ).catch((err) => log(`[fixloop:github] verify failed: ${err.message}`));
   });
 
   return webhooks;
