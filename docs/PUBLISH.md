@@ -4,20 +4,28 @@ There is no compile step. The package is ESM JavaScript. `npm publish` packs `bi
 
 Do **not** put an npm token in the repo, in a workflow file, or in a chat. If a token was pasted anywhere, revoke it on npm (**Access Tokens → Delete**) and create a new one.
 
-## 1. First publish (your laptop + authenticator)
+## 1. First publish (your laptop)
 
-npm requires a one-time password (2FA) for the first publish. GitHub Actions cannot type that code.
+GitHub Actions cannot complete the first publish if 2FA/passkey is required. Provenance attestations also only work on GitHub Actions — a laptop publish with `"provenance": true` fails with:
+
+`Automatic provenance generation not supported for provider: null`
+
+From a laptop, turn provenance off:
 
 ```bash
 git checkout cursor/oss-hardening-5c25   # or main, after PR #26 is merged
 git pull
 npm ci
 FIXLOOP_OPEN_PR=0 npm test
-npm login
-npm publish --access public --otp=123456
+npm whoami                               # expect abhiyansingh
+npm publish --access public --no-provenance
 ```
 
-Replace `123456` with the current 6-digit code from your authenticator app.
+If a browser opens, complete **passkey** login. Do **not** pass `--otp=` unless you use a TOTP authenticator app.
+
+If you still see `provider: null`, you are on an old clone that still has `"provenance": true` in `package.json`. Pull this branch, or keep `--no-provenance`.
+
+GitHub Releases still publish **with** provenance via `.github/workflows/publish.yml`.
 
 Confirm: [https://www.npmjs.com/package/fixloop](https://www.npmjs.com/package/fixloop)
 
