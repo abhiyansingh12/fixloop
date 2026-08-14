@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { loadGitHubConfig } from './config.js';
 import { createWebhookHandlers } from './webhooks.js';
+import { redactSecrets } from '../secrets.js';
 
 /**
  * Start GitHub webhook HTTP server.
@@ -54,7 +55,7 @@ export async function startGitHubWebhookServer(opts = {}) {
       res.writeHead(200);
       res.end('ok');
     } catch (err) {
-      console.error('[fixloop:github] webhook error:', err.message);
+      console.error('[fixloop:github] webhook error:', redactSecrets(err.message));
       res.writeHead(400);
       res.end('Webhook Error');
     }

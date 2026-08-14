@@ -31,6 +31,13 @@ describe('allowlist', () => {
     assert.equal(ok.rel, 'demo/public/js/main.js');
 
     assert.throws(() => assertHealPathAllowed('/repo', '/repo/.env'));
+    assert.throws(() => assertHealPathAllowed('/repo', '/repo/.env.local'));
+    assert.throws(() => assertHealPathAllowed('/repo', '/repo/.npmrc'));
+    assert.throws(() => assertHealPathAllowed('/repo', '/repo/id_rsa'));
+    assert.throws(() => assertHealPathAllowed('/repo', '/repo/secrets/github-app.pem'));
+    assert.throws(() =>
+      assertHealPathAllowed('/repo', '/repo/.env', undefined, undefined, '.env'),
+    );
     assert.throws(() => assertHealPathAllowed('/repo', '/etc/passwd'));
     assert.throws(() =>
       assertHealPathAllowed('/repo', '/repo/node_modules/left-pad/index.js'),

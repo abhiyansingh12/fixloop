@@ -11,6 +11,7 @@ import {
 } from './policy.js';
 import { assertHealPathAllowed, DEFAULT_HEAL_ALLOWLIST } from './allowlist.js';
 import { applyHealContent } from './patch.js';
+import { assertSafeApiUrl, looksLikeSecretMaterial, redactSecrets } from './secrets.js';
 
 /**
  * Build the repair prompt from failure trace + source.
@@ -63,6 +64,8 @@ export async function requestKiroFix(prompt) {
 
   const model = process.env.FIXLOOP_MODEL ?? process.env.KIRO_HEAL_MODEL ?? process.env.KIRO_MODEL ?? 'gpt-4o-mini';
 
+  assertSafeApiUrl(apiUrl);
+
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
@@ -84,8 +87,8 @@ export async function requestKiroFix(prompt) {
   });
 
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Generation API failed (${res.status}): ${errText.slice(0, 500)}`);
+    const errText = redactSecrets(await res.text(), [apiKey]);
+    throw new Error(`Generation API failed (${res.status}): ${errText.slice(0, 200)}`);
   }
 
   const data = await res.json();
@@ -147,7 +150,12 @@ export async function healFile(options) {
   }
 
   const failureBlock = formatFailureBlock(parseResult);
-  const prompt = buildHealPrompt(rel, sourceCode, failureBlock);
+  if (looksLikeSecretMaterial(sourceCode)) {
+    throw new Error(
+      `Refusing to heal ${rel}: file looks like credentials or a private key.`,
+    );
+  }
+  const prompt = buildHealPrompt(rel, sourceCode, redactSecrets(failureBlock));
 
   console.log(`[fixloop] healing ${rel} (attempt ${attempt})…`);
 
@@ -269,7 +277,7 @@ export async function createSelfHealedPR({
       '',
       '**Status:** Re-run passed after patch (draft PR, not merged)',
       '',
-      failureReport,
+      redactSecrets(failureReport),
       '',
       'This branch is reused (`fixloop/auto-fix`). Only `product_regression` failures may write application code.',
     ].join('\n');
@@ -301,7 +309,7 @@ export async function createSelfHealedPR({
     console.log(`[fixloop] draft pull request created: ${pr.html_url}`);
     return pr;
   } catch (error) {
-    console.error('[fixloop] GitHub PR creation failed:', error.message);
+    console.error('[fixloop] GitHub PR creation failed:', redactSecrets(error.message));
     return null;
   }
 }

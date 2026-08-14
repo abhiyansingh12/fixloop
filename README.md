@@ -72,7 +72,9 @@ A Next app is the same shape: point `healTarget` at `app/page.tsx` (or `src/app/
 ## Safety
 
 - Writes limited to `healAllowlist` in `.fixloop.json` (default: `src/`, `app/`, `pages/`, `public/`, `examples/`, …)
-- `.env`, `*.pem`, lockfiles, `node_modules`, `.git` are denylisted
+- `.env`, `*.pem`, `*.key`, SSH keys, `.npmrc`, lockfiles, `node_modules`, `.git` are denylisted
+- API error bodies, PR text, and logs run through secret redaction (`sk-`, `ghp_`, live `OPENAI_API_KEY` / `GITHUB_TOKEN`)
+- Generation APIs must be https (or localhost). Keys go in `.env` or Actions secrets, never in the workflow file.
 - Prefer unified diffs; empty writes are refused
 - One stable branch: `fixloop/auto-fix`
 - Draft PRs only. Never auto-merge

@@ -17,7 +17,7 @@ function run(cmd, args, opts = {}) {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`${cmd} ${args.join(' ')} exited ${code}`));
+      else reject(new Error(`${cmd} exited ${code}`));
     });
   });
 }

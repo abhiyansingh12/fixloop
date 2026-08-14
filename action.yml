@@ -26,4 +26,5 @@ runs:
       env:
         GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
         GITHUB_REPOSITORY: ${{ env.GITHUB_REPOSITORY }}
-      run: node "${{ github.action_path }}/bin/fixloop.js" ci --command "${{ inputs.command }}"
+        FIXLOOP_PLAYWRIGHT_COMMAND: ${{ inputs.command }}
+      run: node "${{ github.action_path }}/bin/fixloop.js" ci

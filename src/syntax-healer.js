@@ -3,6 +3,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createSelfHealedPR, requestFix, extractCodeFromResponse } from './healer.js';
 import { shouldOpenAutomatedPr, STABLE_AUTO_FIX_BRANCH } from './policy.js';
+import { assertHealPathAllowed } from './allowlist.js';
+import { looksLikeSecretMaterial, redactSecrets } from './secrets.js';
 
 /**
  * Run `node --check <file>` to detect syntax errors.
@@ -139,11 +141,23 @@ Objective: Fix the ${errorType} error in this file. The error trace above shows 
 export async function healSyntaxError(opts) {
   const { filePath, repoRoot, errorOutput, errorType, maxAttempts = 3 } = opts;
 
+  try {
+    assertHealPathAllowed(repoRoot, filePath);
+  } catch (err) {
+    console.error(`[fixloop:syntax] ${err.message}`);
+    return { healed: false, attempts: 0 };
+  }
+
   let sourceCode;
   try {
     sourceCode = await fs.readFile(filePath, 'utf8');
   } catch (err) {
-    console.error(`[fixloop:syntax] cannot read ${filePath}: ${err.message}`);
+    console.error(`[fixloop:syntax] cannot read ${filePath}: ${redactSecrets(err.message)}`);
+    return { healed: false, attempts: 0 };
+  }
+
+  if (looksLikeSecretMaterial(sourceCode)) {
+    console.error('[fixloop:syntax] refusing to heal a file that looks like credentials');
     return { healed: false, attempts: 0 };
   }
 
@@ -170,7 +184,7 @@ export async function healSyntaxError(opts) {
         };
         fixedCode = await requestFix(filePath, sourceCode, parseResult, prompt);
       } catch (err) {
-        console.error(`[fixloop:syntax] LLM heal failed: ${err.message}`);
+        console.error(`[fixloop:syntax] LLM heal failed: ${redactSecrets(err.message)}`);
         return { healed: false, attempts: attempt };
       }
     }
@@ -186,7 +200,7 @@ export async function healSyntaxError(opts) {
       return { healed: true, attempts: attempt };
     }
 
-    console.log(`[fixloop:syntax] still broken after attempt ${attempt}: ${recheck.error?.slice(0, 200)}`);
+    console.log(`[fixloop:syntax] still broken after attempt ${attempt}: ${redactSecrets(recheck.error?.slice(0, 200) ?? '')}`);
   }
 
   console.error(`[fixloop:syntax] max attempts reached — could not fix ${path.relative(repoRoot, filePath)}`);

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { waitForHttp } from '../pipeline.js';
+import { redactSecrets } from '../secrets.js';
 
 /**
  * @param {string[]} args
@@ -70,6 +71,8 @@ export async function startRepoServer(runtime, repoRoot, port) {
 
   child.kill('SIGTERM');
   throw new Error(
-    `Dev server did not become ready on port ${port}: ${lastError?.message ?? 'unknown'}\n${logs.slice(-12).join('')}`,
+    redactSecrets(
+      `Dev server did not become ready on port ${port}: ${lastError?.message ?? 'unknown'}\n${logs.slice(-12).join('')}`,
+    ),
   );
 }

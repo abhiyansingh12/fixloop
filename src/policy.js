@@ -1,4 +1,5 @@
 import { env, envOn } from './flags.js';
+import { assertSafeApiUrl } from './secrets.js';
 
 const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
@@ -27,14 +28,17 @@ export function isVerifyComment(body) {
 }
 
 export function resolveChatCompletionsUrl(envObj = process.env) {
-  if (envObj.FIXLOOP_API_URL) return envObj.FIXLOOP_API_URL;
-  if (envObj.KIRO_HEAL_API_URL) return envObj.KIRO_HEAL_API_URL;
-  if (envObj.KIRO_GENERATION_URL) return envObj.KIRO_GENERATION_URL;
-  if (envObj.OPENAI_API_KEY) {
+  let url = null;
+  if (envObj.FIXLOOP_API_URL) url = envObj.FIXLOOP_API_URL;
+  else if (envObj.KIRO_HEAL_API_URL) url = envObj.KIRO_HEAL_API_URL;
+  else if (envObj.KIRO_GENERATION_URL) url = envObj.KIRO_GENERATION_URL;
+  else if (envObj.OPENAI_API_KEY) {
     const base = (envObj.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
-    return `${base}/chat/completions`;
+    url = `${base}/chat/completions`;
   }
-  return null;
+  if (!url) return null;
+  assertSafeApiUrl(url);
+  return url;
 }
 
 export function isValidGitHubRepoName(owner, repo) {

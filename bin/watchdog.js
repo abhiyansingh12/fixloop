@@ -20,6 +20,8 @@ const __dirname = path.dirname(__filename);
 import chokidar from 'chokidar';
 import { loadEnvFile } from '../src/env.js';
 import { shouldOpenAutomatedPr } from '../src/policy.js';
+import { assertHealPathAllowed } from '../src/allowlist.js';
+import { looksLikeSecretMaterial, redactSecrets, assertSafeApiUrl } from '../src/secrets.js';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -131,6 +133,13 @@ async function llmHeal(filePath, source, errorOutput) {
 
   const model = process.env.FIXLOOP_MODEL ?? process.env.KIRO_HEAL_MODEL ?? 'gpt-4o-mini';
 
+  try {
+    assertSafeApiUrl(apiUrl);
+  } catch (err) {
+    console.error(`[watchdog] ${err.message}`);
+    return null;
+  }
+
   const prompt = `Fix this Node.js file that has an error.
 
 File: ${filePath}
@@ -175,7 +184,7 @@ Return ONLY the complete corrected file content. No explanations.`;
     const fenced = content.match(/```(?:\w+)?\n([\s\S]*?)```/);
     return fenced ? fenced[1].trim() : content.trim();
   } catch (err) {
-    console.error(`[watchdog] LLM request failed: ${err.message}`);
+    console.error(`[watchdog] LLM request failed: ${redactSecrets(err.message)}`);
     return null;
   }
 }
@@ -265,7 +274,7 @@ async function createPR(filePath, correctedCode, errorOutput) {
         '',
         '**Original Error:**',
         '```',
-        errorOutput.slice(0, 1000),
+        redactSecrets(errorOutput).slice(0, 1000),
         '```',
         '',
         '*Set FIXLOOP_OPEN_PR=1 to enable PRs. No auto-merge.*',
@@ -275,7 +284,7 @@ async function createPR(filePath, correctedCode, errorOutput) {
     console.log(`[watchdog] ✓ PR created: ${pr.html_url}`);
     return pr;
   } catch (err) {
-    console.error(`[watchdog] PR creation failed: ${err.message}`);
+    console.error(`[watchdog] PR creation failed: ${redactSecrets(err.message)}`);
     return null;
   }
 }
@@ -290,14 +299,24 @@ async function healFile(filePath) {
   healingInProgress.add(filePath);
 
   try {
-    // Check syntax
+    try {
+      assertHealPathAllowed(repoRoot, filePath);
+    } catch (err) {
+      console.error(`[watchdog] ${err.message}`);
+      return;
+    }
+
     const result = await checkSyntax(filePath);
-    if (result.valid) return; // File is fine
+    if (result.valid) return;
 
     console.log(`\n[watchdog] ⚠ Error detected in ${path.relative(repoRoot, filePath)}`);
-    console.log(`[watchdog] ${result.error.split('\n').slice(0, 3).join('\n')}`);
+    console.log(`[watchdog] ${redactSecrets(result.error.split('\n').slice(0, 3).join('\n'))}`);
 
     let source = await fs.readFile(filePath, 'utf8');
+    if (looksLikeSecretMaterial(source)) {
+      console.error('[watchdog] refusing to heal a file that looks like credentials');
+      return;
+    }
     let errorOutput = result.error;
 
     for (let attempt = 1; attempt <= MAX_HEAL_ATTEMPTS; attempt++) {
@@ -348,7 +367,7 @@ function scheduleHeal(filePath) {
   debounceTimers.set(filePath, setTimeout(() => {
     debounceTimers.delete(filePath);
     healFile(filePath).catch(err => {
-      console.error(`[watchdog] unexpected error: ${err.message}`);
+      console.error(`[watchdog] unexpected error: ${redactSecrets(err.message)}`);
       healingInProgress.delete(filePath);
     });
   }, DEBOUNCE_MS));
@@ -399,6 +418,6 @@ function escapeRegex(str) {
 }
 
 main().catch((err) => {
-  console.error(`[watchdog] fatal: ${err.message}`);
+  console.error(`[watchdog] fatal: ${redactSecrets(err.message)}`);
   process.exit(1);
 });
