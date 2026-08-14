@@ -19,7 +19,8 @@ jobs:
         with:
           # Trusted Publisher (OIDC) needs Node >= 22.14 and npm >= 11.5.1
           node-version: '22'
-          registry-url: https://registry.npmjs.org
+          # Do not set registry-url: setup-node would write an empty
+          # _authToken into .npmrc and the PUT to npm returns 404.
 
       - run: npm ci
 
