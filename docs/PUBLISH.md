@@ -8,6 +8,8 @@ Do **not** put an npm token in the repo, in a workflow file, or in a chat. If a 
 
 [`fixloop@1.0.0`](https://www.npmjs.com/package/fixloop) is on npm (`abhiyansingh`). It went out from a laptop with `--no-provenance` (provenance only works on GitHub Actions). Later versions should go out via GitHub Release.
 
+The GitHub tree is **1.0.1** (zero runtime npm dependencies). After Trusted Publisher is saved, cut a GitHub Release tagged `v1.0.1` so npm matches.
+
 ```bash
 npm install -g fixloop
 npx fixloop --help

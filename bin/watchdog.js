@@ -16,12 +16,12 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Minimal chokidar import — watchdog must stay lean
-import chokidar from 'chokidar';
 import { loadEnvFile } from '../src/env.js';
 import { shouldOpenAutomatedPr } from '../src/policy.js';
 import { assertHealPathAllowed } from '../src/allowlist.js';
 import { looksLikeSecretMaterial, redactSecrets, assertSafeApiUrl } from '../src/secrets.js';
+import { createGitHubClient } from '../src/github/api.js';
+import { watchTree } from '../src/watch-files.js';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -206,17 +206,7 @@ async function createPR(filePath, correctedCode, errorOutput) {
     return null;
   }
 
-  // Dynamic import to avoid crashing if @octokit/rest isn't installed
-  let Octokit;
-  try {
-    const mod = await import('@octokit/rest');
-    Octokit = mod.Octokit;
-  } catch {
-    console.log('[watchdog] @octokit/rest not available — skipping PR');
-    return null;
-  }
-
-  const octokit = new Octokit({ auth: token });
+  const octokit = createGitHubClient(token);
   const branchName = 'fixloop/auto-fix';
   const relPath = path.relative(repoRoot, filePath);
 
@@ -388,29 +378,11 @@ async function main() {
   console.log('');
   console.log('[watchdog] waiting for file changes…\n');
 
-  const watcher = chokidar.watch(repoRoot, {
-    ignored: [
-      /(^|[/\\])\../,
-      '**/node_modules/**',
-      '**/.git/**',
-      '**/package-lock.json',
-      '**/dist/**',
-      '**/build/**',
-    ],
-    ignoreInitial: true,
-    awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
-  });
-
-  const onFile = (filePath) => {
-    // Only process JS/TS files
+  watchTree(repoRoot, (filePath) => {
     if (!/\.(js|mjs|cjs|ts|tsx|jsx)$/i.test(filePath)) return;
-    // Don't heal ourselves (prevent infinite loop)
     if (path.resolve(filePath) === path.resolve(__filename)) return;
     scheduleHeal(filePath);
-  };
-
-  watcher.on('add', onFile);
-  watcher.on('change', onFile);
+  });
 }
 
 function escapeRegex(str) {

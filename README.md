@@ -80,6 +80,7 @@ A Next app is the same shape: point `healTarget` at `app/page.tsx` (or `src/app/
 - Draft PRs only. Never auto-merge
 - Local CLI does not open PRs unless `FIXLOOP_OPEN_PR=1`
 - GitHub Actions may open a draft PR after a **green** re-run (`GITHUB_TOKEN`); set `FIXLOOP_OPEN_PR=0` to disable
+- **Zero runtime npm dependencies.** GitHub REST, webhook HMAC, NDJSON, and file watching use Node builtins (`fetch`, `crypto`, `fs.watch`). Optional peers: Playwright, Kane.
 
 ## CLI
 
@@ -115,7 +116,7 @@ See [`.env.example`](.env.example). `FIXLOOP_*` is canonical; `KIRO_HEAL_*` is r
 
 ## Publish to npm
 
-[`fixloop@1.0.0`](https://www.npmjs.com/package/fixloop) is on npm.
+[`fixloop@1.0.0`](https://www.npmjs.com/package/fixloop) is on npm. The GitHub tree is **1.0.1** (zero runtime dependencies). Publish `1.0.1` via GitHub Release after Trusted Publisher is saved.
 
 Later versions: [docs/PUBLISH.md](docs/PUBLISH.md). Turn on Trusted Publisher for workflow `publish.yml` (Allow npm publish), then cut a GitHub Release (`v1.0.1`, …). No `NPM_TOKEN` needed on that path.
 

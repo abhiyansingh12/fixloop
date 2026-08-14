@@ -3,7 +3,7 @@ import path from 'node:path';
 import { isHealBotPullRequest, STABLE_VERIFY_BRANCH } from '../policy.js';
 
 /**
- * @param {import('@octokit/rest').Octokit} octokit
+ * @param {*} octokit
  * @param {string} owner
  * @param {string} repo
  * @param {string} baseBranch

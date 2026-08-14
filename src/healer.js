@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Octokit } from '@octokit/rest';
+import { createGitHubClient } from './github/api.js';
 import { formatFailureBlock } from './parser.js';
 import { tryLocalHeal, WORKING_MAIN_JS } from './local-healer.js';
 import {
@@ -209,7 +209,7 @@ export async function createSelfHealedPR({
     return null;
   }
 
-  const octokit = new Octokit({ auth: token });
+  const octokit = createGitHubClient(token);
 
   try {
     const { data: openPrs } = await octokit.pulls.list({

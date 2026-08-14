@@ -10,7 +10,7 @@ import { formatTriageMessage, TEST_DEFECT_COMMENT, triageFailure } from './triag
 import { shouldOpenAutomatedPr, STABLE_AUTO_FIX_BRANCH } from './policy.js';
 import { envOn } from './flags.js';
 import { postComment } from './github/pr.js';
-import { Octokit } from '@octokit/rest';
+import { createGitHubClient } from './github/api.js';
 import { redactSecrets } from './secrets.js';
 
 const DEFAULT_KANE = 'kane-cli';
@@ -225,7 +225,7 @@ async function maybePostTriage(opts, triage) {
   const owner = process.env.GITHUB_OWNER ?? process.env.GITHUB_REPOSITORY_OWNER;
   const repo = process.env.GITHUB_REPO ?? process.env.GITHUB_REPOSITORY?.split('/')[1];
   if (!issueNumber || !token || !owner || !repo) return;
-  const octokit = new Octokit({ auth: token });
+  const octokit = createGitHubClient(token);
   await postComment(octokit, owner, repo, Number(issueNumber), redactSecrets(formatTriageMessage(triage)));
 }
 

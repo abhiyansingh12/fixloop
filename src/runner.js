@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import ndjson from 'ndjson';
+import { createNdjsonParser } from './ndjson.js';
 import { ingestEvent, finalizeAccumulator, createAccumulator } from './parser.js';
 import { simulateKaneRun, isKaneAuthenticated } from './simulator.js';
 import { envOn } from './flags.js';
@@ -38,7 +38,7 @@ export function resolveKaneBin(cwd = process.cwd(), explicit = process.env.KANE_
  */
 
 /**
- * Spawn Kane CLI testmd run --agent --headless; parse NDJSON via ndjson stream.
+ * Spawn Kane CLI testmd run --agent --headless; parse NDJSON line by line.
  * Falls back to the recorded-fixture simulator when Kane is missing or logged out.
  * @param {string} [kaneBin]
  */
@@ -88,15 +88,16 @@ export async function runKaneTest(options) {
 
     const state = createAccumulator();
 
-    const parser = ndjson.parse();
-    parser.on('data', (obj) => {
-      ingestEvent(state, obj);
-      onEvent?.(obj);
+    const parser = createNdjsonParser({
+      onObject(obj) {
+        ingestEvent(state, obj);
+        onEvent?.(obj);
+      },
     });
 
     child.stdout.on('data', (chunk) => {
       onRaw?.(chunk.toString(), 'stdout');
-      parser.write(chunk);
+      parser.push(chunk.toString());
     });
 
     child.stderr.setEncoding('utf8');
@@ -115,15 +116,8 @@ export async function runKaneTest(options) {
     child.on('close', (code) => {
       exitCode = code ?? 1;
       parser.end();
-    });
-
-    parser.on('finish', () => {
       const result = finalizeAccumulator(state, exitCode);
       resolve({ ...result, exitCode });
-    });
-
-    parser.on('error', (err) => {
-      reject(new Error(`NDJSON parse error: ${err.message}`));
     });
   });
 }

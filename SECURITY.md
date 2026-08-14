@@ -57,6 +57,27 @@ Webhook requirements:
 
 Never commit `.env`, `github-app.pem`, or GitHub App private keys. Rotate a leaked webhook secret or App key immediately.
 
+## Supply chain (Socket and similar scanners)
+
+fixloop ships **no runtime npm dependencies**. Optional peers (`@playwright/test`, `@testmuai/kane-cli`) are not installed with the package.
+
+Scanners will still flag **this package** for capabilities the product requires:
+
+| Alert | Why it stays |
+| --- | --- |
+| Network access | GitHub API + optional generation API (`fetch`) |
+| Shell access | Re-runs the same Playwright/Kane command (`spawn`) |
+| Filesystem access | Reads/writes allowlisted application files |
+| Environment variable access | `GITHUB_TOKEN`, API keys, `FIXLOOP_*` |
+| URL strings | `https://api.github.com` and the configured generation URL |
+| Unpopular package | New package; downloads grow after publish |
+
+Those are not CVEs. Do not “fix” them by removing GitHub or Playwright.
+
+Alerts on **transitive** packages (install scripts, `eval`, obfuscation, `json-with-bigint` typosquat, Socket overrides, deprecated helpers) came from Octokit / `ndjson` / `clipanion` / `chokidar`. Those libraries are gone.
+
+Do not add `@socketregistry/*` overrides. They are another supply-chain vendor, not a security requirement.
+
 ## Reporting
 
 Open a private report via GitHub Security Advisories on this repository, or email the maintainer listed on the GitHub profile.

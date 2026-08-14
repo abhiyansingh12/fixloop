@@ -1,6 +1,6 @@
 {
   "name": "fixloop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Triage red Playwright runs. Only product_regression may write code. Re-run must be green before a draft PR.",
   "type": "module",
   "bin": {
@@ -66,13 +66,5 @@
     "@testmuai/kane-cli": {
       "optional": true
     }
-  },
-  "dependencies": {
-    "@octokit/app": "^16.0.1",
-    "@octokit/rest": "^21.1.1",
-    "@octokit/webhooks": "^13.7.5",
-    "chokidar": "^4.0.3",
-    "clipanion": "^4.0.0-rc.4",
-    "ndjson": "^2.0.0"
   }
 }

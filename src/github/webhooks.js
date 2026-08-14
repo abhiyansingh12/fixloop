@@ -1,10 +1,26 @@
-import { Webhooks } from '@octokit/webhooks';
+import crypto from 'node:crypto';
 import { loadGitHubConfig } from './config.js';
 import { verifyGitHubRepository } from './verify.js';
 import { isTrustedCommentAuthor, isVerifyComment } from '../policy.js';
 
 /** One in-flight verify per owner/repo so overlapping webhooks cannot stampede PRs. */
 const inflight = new Set();
+
+/**
+ * @param {string} secret
+ * @param {string} rawBody
+ * @param {string} signatureHeader
+ */
+export function verifyGitHubSignature(secret, rawBody, signatureHeader) {
+  if (!secret) throw new Error('Missing webhook secret');
+  if (!signatureHeader) throw new Error('Missing webhook signature');
+  const expected = `sha256=${crypto.createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(String(signatureHeader));
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    throw new Error('Invalid webhook signature');
+  }
+}
 
 /**
  * @param {string} key
@@ -36,6 +52,48 @@ export function shouldHandleVerifyComment(payload) {
 
 /**
  * @param {object} opts
+ * @param {string} opts.secret
+ */
+export function createWebhookHub({ secret }) {
+  /** @type {Map<string, Array<(args: { payload: object }) => unknown>>} */
+  const handlers = new Map();
+
+  return {
+    /**
+     * @param {string} event
+     * @param {(args: { payload: object }) => unknown} fn
+     */
+    on(event, fn) {
+      const list = handlers.get(event) ?? [];
+      list.push(fn);
+      handlers.set(event, list);
+    },
+    /**
+     * @param {object} opts
+     * @param {string} [opts.id]
+     * @param {string} opts.name
+     * @param {string} opts.payload
+     * @param {string} opts.signature
+     */
+    async verifyAndReceive({ name, payload, signature }) {
+      verifyGitHubSignature(secret, payload, signature);
+      const data = JSON.parse(payload);
+      const eventName = String(name || '');
+      const keys = [eventName];
+      if (data && typeof data === 'object' && data.action) {
+        keys.push(`${eventName}.${data.action}`);
+      }
+      for (const key of keys) {
+        for (const fn of handlers.get(key) ?? []) {
+          await fn({ payload: data });
+        }
+      }
+    },
+  };
+}
+
+/**
+ * @param {object} opts
  * @param {(msg: string) => void} [opts.log]
  */
 export async function createWebhookHandlers(opts = {}) {
@@ -46,7 +104,7 @@ export async function createWebhookHandlers(opts = {}) {
     throw new Error('GITHUB_WEBHOOK_SECRET is required for webhook server');
   }
 
-  const webhooks = new Webhooks({ secret: config.webhookSecret });
+  const webhooks = createWebhookHub({ secret: config.webhookSecret });
 
   webhooks.on('installation.created', async ({ payload }) => {
     log(`[fixloop:github] app installed on ${payload.installation.account?.login}`);

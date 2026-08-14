@@ -1,10 +1,9 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
-import chokidar from 'chokidar';
-import { Builtins, Cli, Command, Option } from 'clipanion';
-import { loadConfig, resolvePaths } from '../src/config.js';
+import { loadConfig } from '../src/config.js';
 import {
   initProject,
   loadProject,
@@ -20,220 +19,225 @@ import {
   loadGitHubConfig,
 } from '../src/github/config.js';
 import { loadEnvFile } from '../src/env.js';
-import { envOn } from '../src/flags.js';
+import { flagOn, flagString, parseArgv } from '../src/cli-args.js';
+import { watchTree } from '../src/watch-files.js';
 
-const cli = new Cli({
-  binaryLabel: 'fixloop',
-  binaryName: 'fixloop',
-  binaryVersion: '1.0.0',
-});
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 function repoRootFrom(dir) {
   return path.resolve(dir ?? process.cwd());
 }
 
-class InitCommand extends Command {
-  static paths = [['init']];
-  dir = Option.String('--dir', { required: false });
-  baseUrl = Option.String('--base-url', { required: false });
+const HELP = `fixloop ${VERSION}
 
-  async execute() {
-    const repoRoot = repoRootFrom(this.dir);
-    const config = await loadConfig(repoRoot);
-    if (this.baseUrl) config.baseUrl = this.baseUrl;
-    console.log('[fixloop] init: scan routes');
-    const { testFile, routes } = await initProject(repoRoot, config);
-    console.log(`[fixloop] test file: ${testFile}`);
-    console.log(`[fixloop] routes: ${routes.length}`);
-    for (const r of routes) console.log(`  ${r.route} → ${r.file}`);
-    console.log(`[fixloop] heal target: ${config.healTarget}`);
-    console.log(`[fixloop] oracle: ${config.oracle}`);
-  }
+Triage red Playwright runs. Only product_regression may write code.
+Re-run must be green before a draft PR.
+
+Usage:
+  fixloop <command> [options]
+
+Commands:
+  init                 Scan routes, write .fixloop/smoke.testmd
+  run                  Triage → maybe heal → re-run
+  ci                   Action entry (test_defect exits 0; still-red exits 1)
+  watch                Re-run on file changes
+  scan                 Regenerate smoke testmd
+  start                Optional example server + init + run + watch
+  github serve         Optional webhook server
+  github verify        Optional clone + verify
+
+Options:
+  --dir <path>         Working directory
+  --command <cmd>      Playwright / oracle command
+  --target <file>      Heal target override
+  --no-heal            Do not write files
+  --base-url <url>     App URL for init/scan
+  --out <file>         Scan output path
+  --debounce <ms>      Watch debounce
+  --port <n>           Webhook server port
+  --repo <owner/name>  github verify
+  --no-pr              github verify without opening a PR
+  --skip-server        start without the example server
+  --broken             start with the broken demo CTA
+  -h, --help           Show this help
+  -v, --version        Print version
+`;
+
+async function cmdInit(flags) {
+  const repoRoot = repoRootFrom(flagString(flags, 'dir'));
+  const config = await loadConfig(repoRoot);
+  const baseUrl = flagString(flags, 'base-url');
+  if (baseUrl) config.baseUrl = baseUrl;
+  console.log('[fixloop] init: scan routes');
+  const { testFile, routes } = await initProject(repoRoot, config);
+  console.log(`[fixloop] test file: ${testFile}`);
+  console.log(`[fixloop] routes: ${routes.length}`);
+  for (const r of routes) console.log(`  ${r.route} → ${r.file}`);
+  console.log(`[fixloop] heal target: ${config.healTarget}`);
+  console.log(`[fixloop] oracle: ${config.oracle}`);
 }
 
-class RunCommand extends Command {
-  static paths = [['run']];
-  dir = Option.String('--dir', { required: false });
-  command = Option.String('--command', { required: false });
-  noHeal = Option.Boolean('--no-heal', { required: false });
-  target = Option.String('--target', { required: false });
-
-  async execute() {
-    const repoRoot = repoRootFrom(this.dir);
-    const config = await loadConfig(repoRoot);
-    if (this.command) config.playwrightCommand = this.command;
-    const outcome = await runPipeline({
-      repoRoot,
-      config,
-      enableHeal: !this.noHeal,
-      targetOverride: this.target,
-    });
-    process.exit(outcome.passed || outcome.triage?.label === 'test_defect' || outcome.triage?.label === 'flake' ? 0 : 1);
-  }
+async function cmdRun(flags) {
+  const repoRoot = repoRootFrom(flagString(flags, 'dir'));
+  const config = await loadConfig(repoRoot);
+  const command = flagString(flags, 'command');
+  if (command) config.playwrightCommand = command;
+  const outcome = await runPipeline({
+    repoRoot,
+    config,
+    enableHeal: !flagOn(flags, 'no-heal'),
+    targetOverride: flagString(flags, 'target'),
+  });
+  process.exit(
+    outcome.passed || outcome.triage?.label === 'test_defect' || outcome.triage?.label === 'flake' ? 0 : 1,
+  );
 }
 
-class CiCommand extends Command {
-  static paths = [['ci']];
-  dir = Option.String('--dir', { required: false });
-  command = Option.String('--command', { required: false });
+async function cmdCi(flags) {
+  const repoRoot = repoRootFrom(flagString(flags, 'dir'));
+  const config = await loadConfig(repoRoot);
+  config.oracle = config.oracle === 'kane' ? 'kane' : 'playwright';
+  const command = flagString(flags, 'command');
+  if (command) config.playwrightCommand = command;
+  console.log('[fixloop] ci: triage → patch only on product_regression → re-run → draft PR if green');
+  const outcome = await runPipeline({
+    repoRoot,
+    config,
+    enableHeal: true,
+    issueNumber: process.env.FIXLOOP_ISSUE_NUMBER || process.env.GITHUB_PR_NUMBER,
+  });
+  if (outcome.triage?.label === 'test_defect') {
+    console.log('[fixloop] update the test, I will not.');
+    process.exit(0);
+  }
+  if (outcome.verified) process.exit(0);
+  process.exit(1);
+}
 
-  async execute() {
-    const repoRoot = repoRootFrom(this.dir);
-    const config = await loadConfig(repoRoot);
-    config.oracle = config.oracle === 'kane' ? 'kane' : 'playwright';
-    if (this.command) config.playwrightCommand = this.command;
-    console.log('[fixloop] ci: triage → patch only on product_regression → re-run → draft PR if green');
-    const outcome = await runPipeline({
-      repoRoot,
-      config,
-      enableHeal: true,
-      issueNumber: process.env.FIXLOOP_ISSUE_NUMBER || process.env.GITHUB_PR_NUMBER,
-    });
-    if (outcome.triage?.label === 'test_defect') {
-      console.log('[fixloop] update the test, I will not.');
-      process.exit(0);
+async function cmdWatch(flags, dirOverride) {
+  const repoRoot = repoRootFrom(dirOverride ?? flagString(flags, 'dir'));
+  const config = await loadConfig(repoRoot);
+  const debounceMs = Number(flagString(flags, 'debounce') ?? config.debounceMs);
+  console.log(`[fixloop] watching ${repoRoot}`);
+  let running = false;
+  let pending = false;
+  const runOnce = async () => {
+    if (running) {
+      pending = true;
+      return;
     }
-    if (outcome.verified) process.exit(0);
-    process.exit(1);
-  }
-}
-
-class WatchCommand extends Command {
-  static paths = [['watch']];
-  dir = Option.String('--dir', { required: false });
-  debounce = Option.String('--debounce', { required: false });
-
-  async execute() {
-    const repoRoot = repoRootFrom(this.dir);
-    const config = await loadConfig(repoRoot);
-    const debounceMs = Number(this.debounce ?? config.debounceMs);
-    console.log(`[fixloop] watching ${repoRoot}`);
-    let running = false;
-    let pending = false;
-    const runOnce = async () => {
-      if (running) {
-        pending = true;
-        return;
+    running = true;
+    try {
+      await runPipeline({ repoRoot, config, enableHeal: true });
+    } catch (err) {
+      console.error(`[fixloop] ${err.message}`);
+    } finally {
+      running = false;
+      if (pending) {
+        pending = false;
+        void runOnce();
       }
-      running = true;
-      try {
-        await runPipeline({ repoRoot, config, enableHeal: true });
-      } catch (err) {
-        console.error(`[fixloop] ${err.message}`);
-      } finally {
-        running = false;
-        if (pending) {
-          pending = false;
-          void runOnce();
-        }
-      }
-    };
-    let timer;
-    const watcher = chokidar.watch(repoRoot, {
-      ignored: [/(^|[/\\])\../, '**/node_modules/**', '**/.git/**', '**/test-results/**', '**/playwright-report/**'],
-      ignoreInitial: true,
-    });
-    watcher.on('all', () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void runOnce(), debounceMs);
-    });
-    await runOnce();
-    await new Promise(() => {});
-  }
-}
-
-class ScanCommand extends Command {
-  static paths = [['scan']];
-  dir = Option.String('--dir', { required: false });
-  out = Option.String('--out', { required: false });
-  baseUrl = Option.String('--base-url', { required: false });
-
-  async execute() {
-    const repoRoot = repoRootFrom(this.dir);
-    const config = await loadConfig(repoRoot);
-    const { outputPath, routes } = await scaffoldTest({
-      repoRoot,
-      outputPath: this.out ?? config.testFile,
-      baseUrl: this.baseUrl ?? config.baseUrl,
-    });
-    console.log(`[fixloop] scaffolded ${outputPath} (${routes.length} routes)`);
-  }
-}
-
-class GithubServeCommand extends Command {
-  static paths = [['github', 'serve']];
-  port = Option.String('--port', { required: false });
-  async execute() {
-    const config = await loadGitHubConfig();
-    assertWebhookServerReady(config);
-    const port = this.port ? Number(this.port) : config.port;
-    await startGitHubWebhookServer({ port });
-  }
-}
-
-class GithubVerifyCommand extends Command {
-  static paths = [['github', 'verify']];
-  repo = Option.String('--repo', { required: false });
-  owner = Option.String('--owner', { required: false });
-  name = Option.String('--name', { required: false });
-  installationId = Option.String('--installation-id', { required: false });
-  ref = Option.String('--ref', { required: false });
-  noPr = Option.Boolean('--no-pr', { required: false });
-
-  async execute() {
-    let owner = this.owner;
-    let name = this.name;
-    if (this.repo?.includes('/')) [owner, name] = this.repo.split('/');
-    if (!owner || !name) {
-      console.error('Usage: fixloop github verify --repo owner/name');
-      process.exit(2);
     }
-    const config = await loadGitHubConfig();
-    assertGitHubAppReady(config);
-    const result = await verifyGitHubRepository({
-      owner,
-      repo: name,
-      installationId: this.installationId ? Number(this.installationId) : undefined,
-      ref: this.ref,
-      openPr: !this.noPr,
-    });
-    console.log(`[fixloop:github] passed=${result.passed}`);
-    process.exit(result.passed ? 0 : 1);
-  }
+  };
+  let timer;
+  watchTree(repoRoot, () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => void runOnce(), debounceMs);
+  });
+  await runOnce();
+  await new Promise(() => {});
 }
 
-class StartCommand extends Command {
-  static paths = [['start']];
-  dir = Option.String('--dir', { required: false });
-  skipServer = Option.Boolean('--skip-server', { required: false });
-  broken = Option.Boolean('--broken', { required: false });
-
-  async execute() {
-    const repoRoot = repoRootFrom(this.dir);
-    const { config, paths } = await loadProject(repoRoot);
-    if (this.broken) config.demoBroken = true;
-    if (!this.skipServer && paths.demoServer) {
-      spawn('node', [paths.demoServer], { cwd: repoRoot, stdio: 'inherit', env: process.env });
-      console.log(`[fixloop] demo server → ${config.baseUrl}`);
-      await waitForHttp(config.baseUrl);
-    }
-    await initProject(repoRoot, config);
-    await runPipeline({ repoRoot, config, enableHeal: true });
-    const watch = new WatchCommand();
-    watch.dir = repoRoot;
-    await watch.execute();
-  }
+async function cmdScan(flags) {
+  const repoRoot = repoRootFrom(flagString(flags, 'dir'));
+  const config = await loadConfig(repoRoot);
+  const { outputPath, routes } = await scaffoldTest({
+    repoRoot,
+    outputPath: flagString(flags, 'out') ?? config.testFile,
+    baseUrl: flagString(flags, 'base-url') ?? config.baseUrl,
+  });
+  console.log(`[fixloop] scaffolded ${outputPath} (${routes.length} routes)`);
 }
 
-cli.register(Builtins.HelpCommand);
-cli.register(InitCommand);
-cli.register(RunCommand);
-cli.register(CiCommand);
-cli.register(WatchCommand);
-cli.register(ScanCommand);
-cli.register(StartCommand);
-cli.register(GithubServeCommand);
-cli.register(GithubVerifyCommand);
+async function cmdGithubServe(flags) {
+  const config = await loadGitHubConfig();
+  assertWebhookServerReady(config);
+  const portRaw = flagString(flags, 'port');
+  const port = portRaw ? Number(portRaw) : config.port;
+  await startGitHubWebhookServer({ port });
+}
+
+async function cmdGithubVerify(flags) {
+  let owner = flagString(flags, 'owner');
+  let name = flagString(flags, 'name');
+  const repoFlag = flagString(flags, 'repo');
+  if (repoFlag?.includes('/')) [owner, name] = repoFlag.split('/');
+  if (!owner || !name) {
+    console.error('Usage: fixloop github verify --repo owner/name');
+    process.exit(2);
+  }
+  const config = await loadGitHubConfig();
+  assertGitHubAppReady(config);
+  const installationId = flagString(flags, 'installation-id');
+  const result = await verifyGitHubRepository({
+    owner,
+    repo: name,
+    installationId: installationId ? Number(installationId) : undefined,
+    ref: flagString(flags, 'ref'),
+    openPr: !flagOn(flags, 'no-pr'),
+  });
+  console.log(`[fixloop:github] passed=${result.passed}`);
+  process.exit(result.passed ? 0 : 1);
+}
+
+async function cmdStart(flags) {
+  const repoRoot = repoRootFrom(flagString(flags, 'dir'));
+  const { config, paths } = await loadProject(repoRoot);
+  if (flagOn(flags, 'broken')) config.demoBroken = true;
+  if (!flagOn(flags, 'skip-server') && paths.demoServer) {
+    spawn('node', [paths.demoServer], { cwd: repoRoot, stdio: 'inherit', env: process.env });
+    console.log(`[fixloop] demo server → ${config.baseUrl}`);
+    await waitForHttp(config.baseUrl);
+  }
+  await initProject(repoRoot, config);
+  await runPipeline({ repoRoot, config, enableHeal: true });
+  await cmdWatch(flags, repoRoot);
+}
 
 await loadEnvFile();
-cli.runExit(process.argv.slice(2));
+const { flags, positionals } = parseArgv(process.argv.slice(2));
+const command = positionals.join(' ');
+
+if (flags.version) {
+  console.log(VERSION);
+  process.exit(0);
+}
+if (flags.help || !command) {
+  console.log(HELP);
+  process.exit(0);
+}
+
+const commands = {
+  init: cmdInit,
+  run: cmdRun,
+  ci: cmdCi,
+  watch: cmdWatch,
+  scan: cmdScan,
+  start: cmdStart,
+  'github serve': cmdGithubServe,
+  'github verify': cmdGithubVerify,
+};
+
+const fn = commands[command];
+if (!fn) {
+  console.error(`Unknown command: ${command}\n`);
+  console.log(HELP);
+  process.exit(2);
+}
+
+try {
+  await fn(flags);
+} catch (err) {
+  console.error(`[fixloop] ${err instanceof Error ? err.message : err}`);
+  process.exit(1);
+}

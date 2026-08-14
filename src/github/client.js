@@ -1,5 +1,5 @@
-import { App } from '@octokit/app';
-import { Octokit } from '@octokit/rest';
+import { createGitHubClient } from './api.js';
+import { createInstallationToken } from './jwt.js';
 import { loadGitHubConfig } from './config.js';
 
 /**
@@ -8,14 +8,18 @@ import { loadGitHubConfig } from './config.js';
 export async function createApp(config) {
   const cfg = config ?? (await loadGitHubConfig());
   if (!cfg.appId || !cfg.privateKey) return null;
-  return new App({
+  return {
     appId: cfg.appId,
     privateKey: cfg.privateKey,
-  });
+    async getInstallationOctokit(installationId) {
+      const token = await createInstallationToken(cfg.appId, cfg.privateKey, installationId);
+      return createGitHubClient(token);
+    },
+  };
 }
 
 /**
- * @param {App} app
+ * @param {{ getInstallationOctokit: (id: number) => Promise<{ auth: () => Promise<{ token: string }> }> }} app
  * @param {number} installationId
  */
 export async function getInstallationToken(app, installationId) {
@@ -28,7 +32,7 @@ export async function getInstallationToken(app, installationId) {
 }
 
 /**
- * Octokit for an installation (GitHub App) or PAT (local dev).
+ * GitHub client for an installation (GitHub App) or PAT (local / Actions).
  * @param {object} opts
  * @param {number} [opts.installationId]
  * @param {import('./config.js').GitHubBotConfig} [opts.config]
@@ -43,14 +47,14 @@ export async function createOctokit(opts = {}) {
   }
 
   if (config.token) {
-    return new Octokit({ auth: config.token });
+    return createGitHubClient(config.token);
   }
 
   throw new Error('Need installationId + GitHub App credentials, or GITHUB_TOKEN');
 }
 
 /**
- * @param {import('@octokit/rest').Octokit} octokit
+ * @param {ReturnType<typeof createGitHubClient>} octokit
  */
 export async function getDefaultBranch(octokit, owner, repo) {
   const { data } = await octokit.repos.get({ owner, repo });
