@@ -21,6 +21,15 @@ export {
   loadProject,
 } from './pipeline.js';
 export {
+  shouldOpenAutomatedPr,
+  isTrustedCommentAuthor,
+  isVerifyComment,
+  resolveChatCompletionsUrl,
+  isHealBotPullRequest,
+  selectHealBranch,
+} from './policy.js';
+export { loadEnvFile } from './env.js';
+export {
   validateFile,
   checkSyntax,
   checkRuntime,

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { isValidGitHubRepoName } from '../policy.js';
 
 /**
  * @param {string} cmd
@@ -22,7 +23,8 @@ function run(cmd, args, opts = {}) {
 }
 
 /**
- * Shallow clone into workDir.
+ * Shallow clone into workDir. Token is passed via http.extraHeader so it
+ * does not appear in the remote URL or `ps` argument list.
  * @param {object} opts
  * @param {string} opts.owner
  * @param {string} opts.repo
@@ -32,15 +34,31 @@ function run(cmd, args, opts = {}) {
  */
 export async function cloneRepository(opts) {
   const { owner, repo, workDir, token, ref } = opts;
+  if (!isValidGitHubRepoName(owner, repo)) {
+    throw new Error(`Invalid GitHub repository "${owner}/${repo}"`);
+  }
+  if (ref && !/^[A-Za-z0-9._\/-]+$/.test(ref)) {
+    throw new Error(`Invalid git ref "${ref}"`);
+  }
+
   await fs.rm(workDir, { recursive: true, force: true });
   await fs.mkdir(path.dirname(workDir), { recursive: true });
 
-  const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+  const cloneUrl = `https://github.com/${owner}/${repo}.git`;
   const args = ['clone', '--depth', '1'];
   if (ref) args.push('--branch', ref);
   args.push(cloneUrl, workDir);
 
-  await run('git', args, { stdio: 'pipe' });
+  await run('git', args, {
+    stdio: 'pipe',
+    env: {
+      ...process.env,
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraHeader',
+      GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+      GIT_TERMINAL_PROMPT: '0',
+    },
+  });
   return workDir;
 }
 

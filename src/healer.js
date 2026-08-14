@@ -3,6 +3,13 @@ import path from 'node:path';
 import { Octokit } from '@octokit/rest';
 import { formatFailureBlock } from './parser.js';
 import { tryLocalHeal } from './local-healer.js';
+import {
+  isValidGitHubRepoName,
+  resolveChatCompletionsUrl,
+  selectHealBranch,
+  shouldOpenAutomatedPr,
+  STABLE_AUTO_FIX_BRANCH,
+} from './policy.js';
 
 /**
  * Build the Kiro isolation prompt from failure trace + source.
@@ -34,12 +41,7 @@ export function extractCodeFromResponse(text) {
  * @param {string} prompt
  */
 export async function requestKiroFix(prompt) {
-  const apiUrl =
-    process.env.KIRO_HEAL_API_URL ??
-    process.env.KIRO_GENERATION_URL ??
-    (process.env.OPENAI_API_KEY
-      ? `${process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'}/chat/completions`
-      : null);
+  const apiUrl = resolveChatCompletionsUrl();
 
   if (!apiUrl) {
     throw new Error(
@@ -173,13 +175,27 @@ export async function createSelfHealedPR({
 }) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    console.warn('[LoopVision] GITHUB_TOKEN not set — skipping PR creation.');
+    console.warn('[kiro-heal] GITHUB_TOKEN not set — skipping PR creation.');
+    return null;
+  }
+
+  if (!isValidGitHubRepoName(owner, repo)) {
+    console.error('[kiro-heal] invalid GITHUB_OWNER / GITHUB_REPO — skipping PR creation.');
     return null;
   }
 
   const octokit = new Octokit({ auth: token });
 
   try {
+    const { data: openPrs } = await octokit.pulls.list({
+      owner,
+      repo,
+      state: 'open',
+      per_page: 30,
+    });
+    const selected = selectHealBranch(openPrs, branchName ?? STABLE_AUTO_FIX_BRANCH);
+    const headBranch = selected.branch;
+
     // 1. Get the base branch SHA
     const { data: refs } = await octokit.git.listMatchingRefs({
       owner,
@@ -187,18 +203,22 @@ export async function createSelfHealedPR({
       ref: `heads/${baseBranch}`,
     });
     if (!refs.length) {
-      console.error(`[LoopVision] base branch "${baseBranch}" not found`);
+      console.error(`[kiro-heal] base branch "${baseBranch}" not found`);
       return null;
     }
     const baseSha = refs[0].object.sha;
 
-    // 2. Create a new branch for the fix
-    await octokit.git.createRef({
-      owner,
-      repo,
-      ref: `refs/heads/${branchName}`,
-      sha: baseSha,
-    });
+    // 2. Create the heal branch if it does not already exist
+    try {
+      await octokit.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${headBranch}`,
+        sha: baseSha,
+      });
+    } catch (err) {
+      if (err.status !== 422) throw err;
+    }
 
     // 3. Get the SHA of the file to update (if it exists)
     let fileSha;
@@ -207,7 +227,7 @@ export async function createSelfHealedPR({
         owner,
         repo,
         path: filename,
-        ref: branchName,
+        ref: headBranch,
       });
       if (!Array.isArray(fileData) && fileData.sha) {
         fileSha = fileData.sha;
@@ -221,44 +241,59 @@ export async function createSelfHealedPR({
       owner,
       repo,
       path: filename,
-      message: '🤖 chore: autonomous patch applied via LoopVision self-healing loop',
+      message: 'chore(kiro-heal): autonomous patch from self-healing loop',
       content: Buffer.from(correctedCode, 'utf8').toString('base64'),
-      branch: branchName,
+      branch: headBranch,
       ...(fileSha ? { sha: fileSha } : {}),
     });
 
-    // 5. Open the PR with the failure report
+    const prBody = [
+      '### kiro-heal self-healing report',
+      '',
+      '**Status:** Verified ✅',
+      '',
+      '**Discovered failure trace:**',
+      '```',
+      failureReport,
+      '```',
+      '',
+      'This branch is reused on later heals (`kiro-heal/auto-fix`) so the bot does not open a new PR every run.',
+    ].join('\n');
+
+    if (selected.reusePr) {
+      const existing = openPrs.find((pr) => pr.head?.ref === headBranch);
+      if (existing) {
+        await octokit.pulls.update({
+          owner,
+          repo,
+          pull_number: existing.number,
+          body: prBody,
+        });
+        console.log(`[kiro-heal] updated existing pull request: ${existing.html_url}`);
+        return existing;
+      }
+    }
+
     const { data: pr } = await octokit.pulls.create({
       owner,
       repo,
-      title: '🤖 [LoopVision] Automated Bug Fix & Kane CLI Verification Tests',
-      head: branchName,
+      title: 'chore(kiro-heal): automated bug fix',
+      head: headBranch,
       base: baseBranch,
-      body: [
-        '### LoopVision Self-Healing Report',
-        '',
-        '**Status:** Verified ✅',
-        '',
-        '**Discovered Failure Trace:**',
-        '```',
-        failureReport,
-        '```',
-        '',
-        '*Generated native Kane CLI tests have been injected into this repository to guarantee this regression does not happen again.*',
-      ].join('\n'),
+      body: prBody,
     });
 
-    console.log(`[LoopVision] Pull Request created: ${pr.html_url}`);
+    console.log(`[kiro-heal] pull request created: ${pr.html_url}`);
     return pr;
   } catch (error) {
-    console.error('[LoopVision] GitHub PR creation failed:', error.message);
+    console.error('[kiro-heal] GitHub PR creation failed:', error.message);
     return null;
   }
 }
 
 /**
  * Closed-loop: run → fail → heal → re-run until pass or max heal cycles.
- * On success, automatically opens a PR with the healed code if GITHUB_TOKEN is set.
+ * On success, opens a PR only when KIRO_HEAL_OPEN_PR=1 and GitHub credentials are set.
  */
 export async function healLoop({ runTest, resolveTarget, repoRoot, maxHealAttempts = 5, github }) {
   let healCount = 0;
@@ -275,8 +310,7 @@ export async function healLoop({ runTest, resolveTarget, repoRoot, maxHealAttemp
     if (lastResult.outcome === 'passed') {
       console.log('[kiro-heal] ✓ Kane verification passed.');
 
-      // Auto-create PR if healing was applied and GitHub info is available
-      if (healCount > 0 && lastHealedTarget) {
+      if (healCount > 0 && lastHealedTarget && shouldOpenAutomatedPr()) {
         const owner = github?.owner ?? process.env.GITHUB_OWNER;
         const repo = github?.repo ?? process.env.GITHUB_REPO;
 
@@ -285,13 +319,12 @@ export async function healLoop({ runTest, resolveTarget, repoRoot, maxHealAttemp
             ? lastHealedTarget
             : path.join(repoRoot, lastHealedTarget);
           const correctedCode = await fs.readFile(absPath, 'utf8');
-          const branchName = `kiro-heal/auto-fix-${Date.now()}`;
           const failureReport = formatFailureBlock(lastResult);
 
           await createSelfHealedPR({
             owner,
             repo,
-            branchName,
+            branchName: STABLE_AUTO_FIX_BRANCH,
             filename: path.relative(repoRoot, absPath),
             correctedCode,
             failureReport,

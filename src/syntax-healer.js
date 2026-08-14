@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createSelfHealedPR, requestFix, extractCodeFromResponse } from './healer.js';
+import { shouldOpenAutomatedPr, STABLE_AUTO_FIX_BRANCH } from './policy.js';
 
 /**
  * Run `node --check <file>` to detect syntax errors.
@@ -64,19 +65,19 @@ export async function checkRuntime(filePath, cwd) {
       resolve({ valid: false, error: `Cannot spawn node for runtime check` });
     });
 
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve({ valid: true, error: null });
+    }, 10000);
+
     child.on('close', (code) => {
+      clearTimeout(timer);
       if (code === 0) {
         resolve({ valid: true, error: null });
       } else {
         resolve({ valid: false, error: stderr.trim().slice(0, 2000) });
       }
     });
-
-    // Timeout after 10s (in case the module starts a server or hangs)
-    setTimeout(() => {
-      child.kill('SIGTERM');
-      resolve({ valid: true, error: null }); // assume OK if it didn't crash quickly
-    }, 10000);
   });
 }
 
@@ -93,10 +94,11 @@ export async function validateFile(filePath, cwd) {
     return { valid: false, error: syntax.error, type: 'syntax' };
   }
 
-  // Step 2: runtime import check (catches ReferenceError, undefined functions, etc.)
-  const runtime = await checkRuntime(filePath, cwd);
-  if (!runtime.valid) {
-    return { valid: false, error: runtime.error, type: 'runtime' };
+  if (process.env.KIRO_HEAL_RUNTIME_CHECK === '1') {
+    const runtime = await checkRuntime(filePath, cwd);
+    if (!runtime.valid) {
+      return { valid: false, error: runtime.error, type: 'runtime' };
+    }
   }
 
   return { valid: true, error: null, type: null };
@@ -282,26 +284,26 @@ export async function syntaxHealPipeline(opts) {
     return { valid: false, healed: false, pr: null };
   }
 
-  // Auto-create PR if GitHub info is available
-  const owner = github?.owner ?? process.env.GITHUB_OWNER;
-  const repo = github?.repo ?? process.env.GITHUB_REPO;
+  if (result.healed && shouldOpenAutomatedPr()) {
+    const owner = github?.owner ?? process.env.GITHUB_OWNER;
+    const repo = github?.repo ?? process.env.GITHUB_REPO;
 
-  if (owner && repo) {
-    const correctedCode = await fs.readFile(filePath, 'utf8');
-    const branchName = `kiro-heal/syntax-fix-${Date.now()}`;
-    const relPath = path.relative(repoRoot, filePath);
+    if (owner && repo) {
+      const correctedCode = await fs.readFile(filePath, 'utf8');
+      const relPath = path.relative(repoRoot, filePath);
 
-    const pr = await createSelfHealedPR({
-      owner,
-      repo,
-      branchName,
-      filename: relPath,
-      correctedCode,
-      failureReport: `${validation.type} error in ${relPath}:\n${validation.error}`,
-      baseBranch: github?.baseBranch ?? 'main',
-    });
+      const pr = await createSelfHealedPR({
+        owner,
+        repo,
+        branchName: STABLE_AUTO_FIX_BRANCH,
+        filename: relPath,
+        correctedCode,
+        failureReport: `${validation.type} error in ${relPath}:\n${validation.error}`,
+        baseBranch: github?.baseBranch ?? 'main',
+      });
 
-    return { valid: true, healed: true, pr };
+      return { valid: true, healed: true, pr };
+    }
   }
 
   return { valid: true, healed: true, pr: null };

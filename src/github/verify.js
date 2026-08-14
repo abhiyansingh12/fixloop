@@ -8,6 +8,7 @@ import { detectRuntime, runtimeConfigForGitHub } from './detect.js';
 import { buildAnalysisJson, buildVerificationReport } from './report.js';
 import { createVerificationPullRequest, postComment } from './pr.js';
 import { startRepoServer } from './runtime.js';
+import { isValidGitHubRepoName } from '../policy.js';
 
 /**
  * @typedef {object} VerifyOptions
@@ -34,6 +35,9 @@ export async function verifyGitHubRepository(options) {
 
   const owner = options.owner;
   const repo = options.repo;
+  if (!isValidGitHubRepoName(owner, repo)) {
+    throw new Error(`Invalid GitHub repository "${owner}/${repo}"`);
+  }
   const baseBranch = options.ref ?? (await getDefaultBranch(octokit, owner, repo));
 
   let token = ghConfig.token;

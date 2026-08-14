@@ -1,6 +1,38 @@
 import { Webhooks } from '@octokit/webhooks';
 import { loadGitHubConfig } from './config.js';
 import { verifyGitHubRepository } from './verify.js';
+import { isTrustedCommentAuthor, isVerifyComment } from '../policy.js';
+
+/** One in-flight verify per owner/repo so overlapping webhooks cannot stampede PRs. */
+const inflight = new Set();
+
+/**
+ * @param {string} key
+ * @param {(msg: string) => void} log
+ * @param {() => Promise<unknown>} fn
+ */
+export async function runExclusiveVerify(key, log, fn) {
+  if (inflight.has(key)) {
+    log(`[kiro-heal:github] verify already running for ${key} — skipping`);
+    return { skipped: true };
+  }
+  inflight.add(key);
+  try {
+    return await fn();
+  } finally {
+    inflight.delete(key);
+  }
+}
+
+/**
+ * @param {object} payload
+ */
+export function shouldHandleVerifyComment(payload) {
+  if (!isVerifyComment(payload?.comment?.body)) return false;
+  if (!payload.installation?.id) return false;
+  if (!isTrustedCommentAuthor(payload.comment?.author_association)) return false;
+  return true;
+}
 
 /**
  * @param {object} opts
@@ -27,36 +59,46 @@ export async function createWebhookHandlers(opts = {}) {
     const installationId = payload.installation?.id;
     if (!repo || !installationId) return;
 
-    const [owner, name] = [repo.owner.login, repo.name];
-    log(`[kiro-heal:github] repository_dispatch ${config.verifyEventType} → ${owner}/${name}`);
+    const owner = repo.owner.login;
+    const name = repo.name;
+    const key = `${owner}/${name}`;
+    log(`[kiro-heal:github] repository_dispatch ${config.verifyEventType} → ${key}`);
 
-    void verifyGitHubRepository({
-      owner,
-      repo: name,
-      installationId,
-      ref: payload.client_payload?.ref,
-      openPr: payload.client_payload?.openPr !== false,
-      log,
-    }).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
+    void runExclusiveVerify(key, log, () =>
+      verifyGitHubRepository({
+        owner,
+        repo: name,
+        installationId,
+        ref: payload.client_payload?.ref,
+        openPr: payload.client_payload?.openPr !== false,
+        log,
+      }),
+    ).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
   });
 
   webhooks.on('issue_comment.created', async ({ payload }) => {
-    const body = payload.comment.body?.trim() ?? '';
-    if (!/^\/kiro-heal\s+verify\b/i.test(body)) return;
+    if (!shouldHandleVerifyComment(payload)) {
+      if (isVerifyComment(payload.comment?.body) && !isTrustedCommentAuthor(payload.comment?.author_association)) {
+        log(
+          `[kiro-heal:github] ignoring /kiro-heal verify from ${payload.comment?.user?.login} (${payload.comment?.author_association})`,
+        );
+      }
+      return;
+    }
 
     const repo = payload.repository;
-    const installationId = payload.installation?.id;
-    if (!installationId) return;
+    const key = repo.full_name;
+    log(`[kiro-heal:github] issue comment verify → ${key}`);
 
-    log(`[kiro-heal:github] issue comment verify → ${repo.full_name}`);
-
-    void verifyGitHubRepository({
-      owner: repo.owner.login,
-      repo: repo.name,
-      installationId,
-      issueNumber: payload.issue.number,
-      log,
-    }).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
+    void runExclusiveVerify(key, log, () =>
+      verifyGitHubRepository({
+        owner: repo.owner.login,
+        repo: repo.name,
+        installationId: payload.installation.id,
+        issueNumber: payload.issue.number,
+        log,
+      }),
+    ).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
   });
 
   webhooks.on('push', async ({ payload }) => {
@@ -67,15 +109,18 @@ export async function createWebhookHandlers(opts = {}) {
     if (!installationId) return;
 
     const repo = payload.repository;
-    log(`[kiro-heal:github] auto verify on push → ${repo.full_name}`);
+    const key = repo.full_name;
+    log(`[kiro-heal:github] auto verify on push → ${key}`);
 
-    void verifyGitHubRepository({
-      owner: repo.owner.login,
-      repo: repo.name,
-      installationId,
-      ref: payload.repository.default_branch,
-      log,
-    }).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
+    void runExclusiveVerify(key, log, () =>
+      verifyGitHubRepository({
+        owner: repo.owner.login,
+        repo: repo.name,
+        installationId,
+        ref: payload.repository.default_branch,
+        log,
+      }),
+    ).catch((err) => log(`[kiro-heal:github] verify failed: ${err.message}`));
   });
 
   return webhooks;

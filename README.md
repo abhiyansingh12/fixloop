@@ -1,23 +1,27 @@
 # kiro-heal
 
-**Local self-healing** + **GitHub Auto-Verification Bot** powered by [Kane CLI](https://www.npmjs.com/package/@testmuai/kane-cli).
+**Local self-healing** + **GitHub Auto-Verification Bot**. Scan a repo, generate Kane `testmd` smoke tests, run browser verification (or an offline simulator), auto-heal failures, and optionally open a PR.
 
-Turn a repository into a self-verifying app: discover routes → generate Kane `testmd` → run browser verification → auto-heal failures → open a PR (GitHub) or fix locally (CLI).
+> This repository is named `hackkk` on GitHub. The CLI, npm package, and docs use **kiro-heal**. Older bot PRs may still say "LoopVision" — that was the hackathon name for the same tool.
 
 ## Quick start (local)
 
 ```bash
 npm install
-npm run dev          # demo server + scan + Kane + heal + watch
+cp .env.example .env   # optional
+npm test               # unit + simulated pipeline tests
+npm run dev            # demo server + scan + heal + watch (injects a demo bug)
 ```
 
 Or step by step:
 
 ```bash
-kiro-heal init
-kiro-heal run
-kiro-heal watch
+npx kiro-heal init --broken   # --broken only for this demo app
+npx kiro-heal run
+npx kiro-heal watch
 ```
+
+Kane CLI is optional. If `kane-cli` is missing or not logged in, kiro-heal uses an offline NDJSON simulator so the loop still runs.
 
 ## GitHub bot
 
@@ -32,7 +36,9 @@ kiro-heal github verify --repo owner/name --installation-id <id>
 
 Full setup: [docs/GITHUB_APP.md](docs/GITHUB_APP.md).
 
-**Triggers:** `repository_dispatch` (`kiro-heal-verify`), `/kiro-heal verify` on issues, optional push auto-verify.
+**Triggers:** `repository_dispatch` (`kiro-heal-verify`), `/kiro-heal verify` on issues (collaborators only), optional push auto-verify.
+
+Automated pull requests are **off by default**. Set `KIRO_HEAL_OPEN_PR=1` when you actually want the bot to open or update a PR. Existing open `kiro-heal/*` PRs are reused instead of creating a new branch every run.
 
 ## Commands
 
@@ -48,7 +54,9 @@ Full setup: [docs/GITHUB_APP.md](docs/GITHUB_APP.md).
 
 ## Environment
 
-See `.env.example` for Kane CLI, heal provider (`local` / `auto` / API), and GitHub App variables.
+See [`.env.example`](.env.example) for Kane CLI, heal provider (`local` / `auto` / API), GitHub App variables, and `KIRO_HEAL_OPEN_PR`.
+
+The CLI loads `.env` from the current working directory on startup.
 
 ## License
 

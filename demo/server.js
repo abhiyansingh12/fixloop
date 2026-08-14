@@ -24,7 +24,8 @@ const ROUTES = {
 async function readPublic(relativePath) {
   const filePath = path.join(PUBLIC_DIR, relativePath);
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(PUBLIC_DIR)) {
+  const publicRoot = path.resolve(PUBLIC_DIR);
+  if (resolved !== publicRoot && !resolved.startsWith(publicRoot + path.sep)) {
     throw new Error('Invalid path');
   }
   return fs.readFile(resolved);

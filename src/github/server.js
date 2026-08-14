@@ -26,7 +26,16 @@ export async function startGitHubWebhookServer(opts = {}) {
     }
 
     const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
+    let received = 0;
+    for await (const chunk of req) {
+      received += chunk.length;
+      if (received > 1024 * 1024) {
+        res.writeHead(413);
+        res.end('Payload too large');
+        return;
+      }
+      chunks.push(chunk);
+    }
     const rawBody = Buffer.concat(chunks).toString('utf8');
 
     const id = req.headers['x-github-delivery'];
@@ -47,7 +56,7 @@ export async function startGitHubWebhookServer(opts = {}) {
     } catch (err) {
       console.error('[kiro-heal:github] webhook error:', err.message);
       res.writeHead(400);
-      res.end(`Webhook Error: ${err.message}`);
+      res.end('Webhook Error');
     }
   });
 

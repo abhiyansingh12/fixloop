@@ -22,12 +22,13 @@ import {
   assertWebhookServerReady,
   loadGitHubConfig,
 } from '../src/github/config.js';
+import { loadEnvFile } from '../src/env.js';
 import { syntaxHealPipeline } from '../src/syntax-healer.js';
 
 const cli = new Cli({
   binaryLabel: 'kiro-heal',
   binaryName: 'kiro-heal',
-  binaryVersion: '0.1.0',
+  binaryVersion: '0.1.1',
 });
 
 function repoRootFrom(dir) {
@@ -68,10 +69,12 @@ class StartCommand extends Command {
   skipInitial = Option.Boolean('--skip-initial-run', { required: false });
   noHeal = Option.Boolean('--no-heal', { required: false });
   noWatch = Option.Boolean('--no-watch', { required: false });
+  broken = Option.Boolean('--broken', { required: false });
 
   async execute() {
     const repoRoot = repoRootFrom(this.dir);
     const { config, paths } = await loadProject(repoRoot);
+    if (this.broken) config.demoBroken = true;
     let serverChild = null;
 
     if (!this.skipServer && paths.demoServer) {
@@ -378,4 +381,5 @@ cli.register(ScanCommand);
 cli.register(GithubServeCommand);
 cli.register(GithubVerifyCommand);
 
+await loadEnvFile();
 cli.runExit(process.argv.slice(2));

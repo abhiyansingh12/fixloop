@@ -34,7 +34,7 @@ export async function detectRuntime(repoRoot) {
   const routes = await scanRoutes(repoRoot);
   const flows = discoverFlows(routes);
 
-  let healTarget = 'demo/public/js/main.js';
+  let healTarget = null;
   for (const rel of HEAL_CANDIDATES) {
     try {
       await fs.access(path.join(repoRoot, rel));
@@ -44,6 +44,8 @@ export async function detectRuntime(repoRoot) {
       // continue
     }
   }
+  if (!healTarget && routes[0]?.file) healTarget = routes[0].file;
+  if (!healTarget) healTarget = 'demo/public/js/main.js';
 
   let serverEntry = null;
   for (const rel of SERVER_CANDIDATES) {

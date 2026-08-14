@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveChatCompletionsUrl } from './policy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = path.join(__dirname, '..', 'templates');
@@ -22,6 +23,8 @@ const IGNORE_DIRS = new Set([
   '.testmuai',
 ]);
 
+const MAX_SCAN_FILES = 4000;
+
 /**
  * Walk directory tree (shallow-safe for hackathon repos).
  * @param {string} dir
@@ -42,6 +45,7 @@ async function walk(dir, files = []) {
       await walk(full, files);
     } else if (/\.(tsx|jsx|js|ts)$/.test(ent.name)) {
       files.push(full);
+      if (files.length >= MAX_SCAN_FILES) return files;
     }
   }
   return files;
@@ -131,9 +135,7 @@ export async function scanRoutes(repoRoot) {
  * @param {string} prompt
  */
 async function llmComplete(prompt) {
-  const apiUrl = process.env.KIRO_HEAL_API_URL ?? process.env.OPENAI_API_KEY
-    ? `${process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'}/chat/completions`
-    : null;
+  const apiUrl = resolveChatCompletionsUrl();
 
   if (!apiUrl) return null;
 

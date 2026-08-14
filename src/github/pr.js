@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-
-const BOT_BRANCH_PREFIX = 'kiro-heal/verify-';
+import { isHealBotPullRequest, STABLE_VERIFY_BRANCH } from '../policy.js';
 
 /**
  * @param {import('@octokit/rest').Octokit} octokit
@@ -15,7 +14,7 @@ async function getHeadSha(octokit, owner, repo, baseBranch) {
 }
 
 /**
- * Create or update files on a new branch and open a PR.
+ * Create or update files on the stable verify branch and open (or update) a PR.
  * @param {object} opts
  */
 export async function createVerificationPullRequest(opts) {
@@ -31,15 +30,31 @@ export async function createVerificationPullRequest(opts) {
     extraPaths = [],
   } = opts;
 
-  const branch = `${BOT_BRANCH_PREFIX}${Date.now()}`;
-  const baseSha = await getHeadSha(octokit, owner, repo, baseBranch);
-
-  const { data: refData } = await octokit.git.createRef({
+  const { data: openPrs } = await octokit.pulls.list({
     owner,
     repo,
-    ref: `refs/heads/${branch}`,
-    sha: baseSha,
+    state: 'open',
+    per_page: 30,
   });
+  const existing = openPrs.find(
+    (pr) => isHealBotPullRequest(pr) && pr.head?.ref?.startsWith('kiro-heal/verify'),
+  );
+  const branch = existing?.head?.ref ?? STABLE_VERIFY_BRANCH;
+  const baseSha = await getHeadSha(octokit, owner, repo, baseBranch);
+
+  let refData;
+  try {
+    const created = await octokit.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${branch}`,
+      sha: baseSha,
+    });
+    refData = created.data;
+  } catch (err) {
+    if (err.status !== 422) throw err;
+    refData = { ref: `refs/heads/${branch}` };
+  }
 
   const filesToCommit = new Map();
 
@@ -49,6 +64,7 @@ export async function createVerificationPullRequest(opts) {
   filesToCommit.set(analysisPath, analysisJson);
 
   for (const rel of extraPaths) {
+    if (rel.includes('..') || path.isAbsolute(rel)) continue;
     const abs = path.join(repoRoot, rel);
     try {
       const content = await fs.readFile(abs, 'utf8');
@@ -90,16 +106,29 @@ export async function createVerificationPullRequest(opts) {
     ? 'chore(kiro-heal): verification passed — Kane tests & report'
     : 'chore(kiro-heal): verification findings — tests, fixes & report';
 
+  const body = `${reportMarkdown}\n\n---\n\n### Next steps\n\n- Review generated \`.kiro-heal/smoke.testmd\` Kane tests\n- Merge when CI / Kane verification is green\n- Re-run verification: \`repository_dispatch\` event \`kiro-heal-verify\` or comment \`/kiro-heal verify\` on an issue`;
+
+  if (existing) {
+    await octokit.pulls.update({
+      owner,
+      repo,
+      pull_number: existing.number,
+      title,
+      body,
+    });
+    return { pr: existing, branch, ref: refData, reused: true };
+  }
+
   const { data: pr } = await octokit.pulls.create({
     owner,
     repo,
     title,
     head: branch,
     base: baseBranch,
-    body: `${reportMarkdown}\n\n---\n\n### Next steps\n\n- Review generated \`.kiro-heal/smoke.testmd\` Kane tests\n- Merge when CI / Kane verification is green\n- Re-run verification: \`repository_dispatch\` event \`kiro-heal-verify\` or comment \`/kiro-heal verify\` on an issue`,
+    body,
   });
 
-  return { pr, branch, ref: refData };
+  return { pr, branch, ref: refData, reused: false };
 }
 
 /**

@@ -4,3 +4,7 @@ node_modules/
 .env
 .env.local
 .kiro-heal/
+*.pem
+github-app.pem
+.idea/
+.vscode/

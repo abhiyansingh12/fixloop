@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
- * LoopVision Watchdog — an independent process that monitors ALL project files
- * (including the main CLI itself) for syntax/runtime errors and self-heals them.
+ * kiro-heal watchdog — monitors project files for syntax errors and self-heals them.
  *
- * This runs as a separate process so it can heal files that would otherwise
+ * Runs as a separate process so it can heal files that would otherwise
  * crash the main kiro-heal watcher.
  *
  * Usage:
@@ -19,6 +18,8 @@ const __dirname = path.dirname(__filename);
 
 // Minimal chokidar import — watchdog must stay lean
 import chokidar from 'chokidar';
+import { loadEnvFile } from '../src/env.js';
+import { shouldOpenAutomatedPr } from '../src/policy.js';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -29,30 +30,8 @@ const repoRoot = path.resolve(process.argv.includes('--dir')
 const MAX_HEAL_ATTEMPTS = 3;
 const DEBOUNCE_MS = 800;
 
-// Load .env manually (no dotenv dependency — keep watchdog self-contained)
 async function loadEnv() {
-  try {
-    const envPath = path.join(repoRoot, '.env');
-    const content = await fs.readFile(envPath, 'utf8');
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx === -1) continue;
-      const key = trimmed.slice(0, eqIdx).trim();
-      let value = trimmed.slice(eqIdx + 1).trim();
-      // Strip surrounding quotes
-      if ((value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      if (!process.env[key]) {
-        process.env[key] = value;
-      }
-    }
-  } catch {
-    // .env not found — that's fine
-  }
+  await loadEnvFile(path.join(repoRoot, '.env'));
 }
 
 // ─── Syntax Check ────────────────────────────────────────────────────────────
@@ -203,6 +182,11 @@ Return ONLY the complete corrected file content. No explanations.`;
 // ─── GitHub PR ───────────────────────────────────────────────────────────────
 
 async function createPR(filePath, correctedCode, errorOutput) {
+  if (!shouldOpenAutomatedPr()) {
+    console.log('[watchdog] KIRO_HEAL_OPEN_PR is not 1 — skipping PR');
+    return null;
+  }
+
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
   const repo = process.env.GITHUB_REPO;
@@ -223,7 +207,7 @@ async function createPR(filePath, correctedCode, errorOutput) {
   }
 
   const octokit = new Octokit({ auth: token });
-  const branchName = `kiro-heal/watchdog-fix-${Date.now()}`;
+  const branchName = 'kiro-heal/auto-fix';
   const relPath = path.relative(repoRoot, filePath);
 
   try {
@@ -235,12 +219,16 @@ async function createPR(filePath, correctedCode, errorOutput) {
     }
     const baseSha = refs[0].object.sha;
 
-    // Create branch
-    await octokit.git.createRef({
-      owner, repo,
-      ref: `refs/heads/${branchName}`,
-      sha: baseSha,
-    });
+    // Create branch if missing
+    try {
+      await octokit.git.createRef({
+        owner, repo,
+        ref: `refs/heads/${branchName}`,
+        sha: baseSha,
+      });
+    } catch (err) {
+      if (err.status !== 422) throw err;
+    }
 
     // Get existing file SHA
     let fileSha;
@@ -264,11 +252,11 @@ async function createPR(filePath, correctedCode, errorOutput) {
     // Open PR
     const { data: pr } = await octokit.pulls.create({
       owner, repo,
-      title: `🤖 [LoopVision Watchdog] Auto-fix: ${relPath}`,
+      title: `chore(kiro-heal): watchdog auto-fix ${relPath}`,
       head: branchName,
       base: 'main',
       body: [
-        '### LoopVision Watchdog — Automatic Error Fix',
+        '### kiro-heal watchdog — automatic error fix',
         '',
         `**File:** \`${relPath}\``,
         '**Status:** Healed ✅',
@@ -278,7 +266,7 @@ async function createPR(filePath, correctedCode, errorOutput) {
         errorOutput.slice(0, 1000),
         '```',
         '',
-        '*This fix was applied automatically by the LoopVision watchdog process.*',
+        '*This fix was applied automatically by the kiro-heal watchdog. Set KIRO_HEAL_OPEN_PR=1 to enable PRs.*',
       ].join('\n'),
     });
 
@@ -370,7 +358,7 @@ async function main() {
   await loadEnv();
 
   console.log('╔══════════════════════════════════════════════════╗');
-  console.log('║   🐕 LoopVision Watchdog — Self-Healing Guard   ║');
+  console.log('║   kiro-heal watchdog — self-healing guard        ║');
   console.log('╠══════════════════════════════════════════════════╣');
   console.log(`║  Watching: ${repoRoot.slice(-38).padEnd(38)}║`);
   console.log('║  Mode: syntax + runtime error detection         ║');

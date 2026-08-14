@@ -24,7 +24,7 @@ export const DEFAULT_CONFIG = {
   maxHeal: 5,
   kaneTimeout: 180,
   debounceMs: 1200,
-  demoBroken: true,
+  demoBroken: false,
 };
 
 /**
@@ -59,10 +59,11 @@ export async function loadConfig(repoRoot) {
       process.env.KIRO_HEAL_DEBOUNCE ?? fileConfig.debounceMs ?? DEFAULT_CONFIG.debounceMs,
     ),
     demoBroken:
-      process.env.KIRO_HEAL_DEMO_BROKEN === '0'
-        ? false
-        : process.env.KIRO_HEAL_DEMO_BROKEN === '1' ||
-          fileConfig.demoBroken !== false,
+      process.env.KIRO_HEAL_DEMO_BROKEN === '1'
+        ? true
+        : process.env.KIRO_HEAL_DEMO_BROKEN === '0'
+          ? false
+          : Boolean(fileConfig.demoBroken ?? DEFAULT_CONFIG.demoBroken),
   };
 }
 

@@ -17,6 +17,12 @@ GitHub repo
 
 \* Push auto-verify only when `KIRO_HEAL_GITHUB_AUTO_PUSH=1`.
 
+`/kiro-heal verify` comments are accepted only from **OWNER**, **MEMBER**, or **COLLABORATOR**. Unknown users cannot trigger a clone + heal.
+
+The bot reuses a single `kiro-heal/verify` branch (and an existing open bot PR) instead of opening a new PR on every run.
+
+Automated PRs from the **local** CLI/watchdog are off unless `KIRO_HEAL_OPEN_PR=1`.
+
 ## 1. Create a GitHub App
 
 1. GitHub → **Settings** → **Developer settings** → **GitHub Apps** → **New GitHub App**

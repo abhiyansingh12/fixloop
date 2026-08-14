@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const child = spawn('node', ['bin/kiro-heal.js', 'start'], {
+const child = spawn('node', ['bin/kiro-heal.js', 'start', '--broken'], {
   cwd: root,
   stdio: 'inherit',
   env: {

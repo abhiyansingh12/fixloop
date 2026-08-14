@@ -1,17 +1,28 @@
 {
   "name": "kiro-heal",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local self-healing + GitHub Auto-Verification Bot powered by Kane CLI",
   "type": "module",
   "bin": {
     "kiro-heal": "./bin/kiro-heal.js"
   },
   "main": "./src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhiyansingh12/hackkk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/abhiyansingh12/hackkk/issues"
+  },
+  "homepage": "https://github.com/abhiyansingh12/hackkk#readme",
+  "author": "abhiyansingh12",
   "files": [
     "bin",
     "src",
     "templates",
-    "docs"
+    "docs",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "start": "node bin/kiro-heal.js start",
