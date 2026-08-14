@@ -13,6 +13,8 @@ const CONFIG_NAMES = ['.kiro-heal.json', 'kiro-heal.json'];
  * @property {number} [kaneTimeout]
  * @property {number} [debounceMs]
  * @property {boolean} [demoBroken]
+ * @property {string[]} [healAllowlist]
+ * @property {string} [fixtureFile]
  */
 
 /** @type {KiroHealConfig} */
@@ -24,6 +26,17 @@ export const DEFAULT_CONFIG = {
   maxHeal: 5,
   kaneTimeout: 180,
   debounceMs: 1200,
+  healAllowlist: [
+    'src/**',
+    'app/**',
+    'pages/**',
+    'public/**',
+    'demo/**',
+    'components/**',
+    'lib/**',
+    'routes/**',
+  ],
+  fixtureFile: '.kiro-heal/fixture.json',
   demoBroken: false,
 };
 
@@ -58,6 +71,10 @@ export async function loadConfig(repoRoot) {
     debounceMs: Number(
       process.env.KIRO_HEAL_DEBOUNCE ?? fileConfig.debounceMs ?? DEFAULT_CONFIG.debounceMs,
     ),
+    healAllowlist: Array.isArray(fileConfig.healAllowlist)
+      ? fileConfig.healAllowlist
+      : DEFAULT_CONFIG.healAllowlist,
+    fixtureFile: process.env.KIRO_HEAL_FIXTURE ?? fileConfig.fixtureFile ?? DEFAULT_CONFIG.fixtureFile,
     demoBroken:
       process.env.KIRO_HEAL_DEMO_BROKEN === '1'
         ? true

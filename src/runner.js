@@ -1,11 +1,26 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import ndjson from 'ndjson';
 import { ingestEvent, finalizeAccumulator, createAccumulator } from './parser.js';
 import { simulateKaneRun, isKaneAuthenticated } from './simulator.js';
 
 const DEFAULT_KANE_BIN = 'kane-cli';
 
-let kaneAuthCache = /** @type {boolean|null} */ (null);
+let kaneAuthCache = /** @type {Record<string, boolean>} */ ({});
+
+/**
+ * Prefer a local node_modules binary, then PATH, then an explicit env override.
+ * @param {string} [cwd]
+ * @param {string} [explicit]
+ */
+export function resolveKaneBin(cwd = process.cwd(), explicit = process.env.KANE_CLI_BIN) {
+  if (explicit) return explicit;
+  const name = process.platform === 'win32' ? 'kane-cli.cmd' : 'kane-cli';
+  const local = path.join(cwd, 'node_modules', '.bin', name);
+  if (fs.existsSync(local)) return local;
+  return DEFAULT_KANE_BIN;
+}
 
 /**
  * @typedef {object} RunOptions
@@ -15,39 +30,45 @@ let kaneAuthCache = /** @type {boolean|null} */ (null);
  * @property {boolean} [headless]
  * @property {boolean} [agent]
  * @property {number} [timeoutSeconds]
+ * @property {string} [targetRel]
+ * @property {string} [fixturePath]
  * @property {(obj: object) => void} [onEvent]
  * @property {(chunk: string, stream: 'stdout'|'stderr') => void} [onRaw]
  */
 
 /**
  * Spawn Kane CLI testmd run --agent --headless; parse NDJSON via ndjson stream.
- * @param {RunOptions} options
+ * Falls back to the recorded-fixture simulator when Kane is missing or logged out.
+ * @param {string} [kaneBin]
  */
 export async function shouldUseSimulator(kaneBin = process.env.KANE_CLI_BIN ?? DEFAULT_KANE_BIN) {
   if (process.env.KIRO_HEAL_SIMULATE_KANE === '1') return true;
   if (process.env.KIRO_HEAL_SIMULATE_KANE === '0') return false;
-  if (kaneAuthCache !== null) return !kaneAuthCache;
-  kaneAuthCache = await isKaneAuthenticated(kaneBin);
-  if (!kaneAuthCache) {
+  if (kaneAuthCache[kaneBin] !== undefined) return !kaneAuthCache[kaneBin];
+  kaneAuthCache[kaneBin] = await isKaneAuthenticated(kaneBin);
+  if (!kaneAuthCache[kaneBin]) {
     console.log('[kiro-heal] Kane CLI not authenticated — using offline simulator (set KIRO_HEAL_SIMULATE_KANE=0 to disable)');
   }
-  return !kaneAuthCache;
+  return !kaneAuthCache[kaneBin];
 }
 
 export async function runKaneTest(options) {
   const {
     testFile,
     cwd = process.cwd(),
-    kaneBin = process.env.KANE_CLI_BIN ?? DEFAULT_KANE_BIN,
     headless = true,
     agent = true,
     timeoutSeconds,
     onEvent,
     onRaw,
+    targetRel,
+    fixturePath,
   } = options;
 
+  const kaneBin = options.kaneBin ?? resolveKaneBin(cwd);
+
   if (await shouldUseSimulator(kaneBin)) {
-    return simulateKaneRun({ cwd, onEvent });
+    return simulateKaneRun({ cwd, onEvent, targetRel, fixturePath });
   }
 
   const args = ['testmd', 'run', testFile];

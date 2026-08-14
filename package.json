@@ -1,6 +1,6 @@
 {
   "name": "kiro-heal",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local self-healing + GitHub Auto-Verification Bot powered by Kane CLI",
   "type": "module",
   "bin": {
@@ -22,7 +22,8 @@
     "templates",
     "docs",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "SECURITY.md"
   ],
   "scripts": {
     "start": "node bin/kiro-heal.js start",
@@ -35,7 +36,8 @@
     "scan": "node bin/kiro-heal.js scan",
     "github:serve": "node bin/kiro-heal.js github serve",
     "github:verify": "node bin/kiro-heal.js github verify",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "npm test"
   },
   "engines": {
     "node": ">=18"
@@ -47,6 +49,17 @@
     "browser-testing"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@testmuai/kane-cli": ">=0.8.0"
+  },
+  "peerDependenciesMeta": {
+    "@testmuai/kane-cli": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "@octokit/app": "^16.0.1",
     "@octokit/rest": "^21.1.1",

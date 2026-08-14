@@ -1,18 +1,21 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ingestEvent, finalizeAccumulator, createAccumulator } from './parser.js';
+import { evaluateFixture, loadFixture } from './fixture.js';
 
 /**
- * Offline Kane NDJSON simulator — reads heal target to decide pass/fail.
+ * Offline Kane NDJSON simulator — uses a recorded fixture, not a hardcoded demo CTA.
  * @param {object} options
  * @param {string} options.cwd
  * @param {(obj: object) => void} [options.onEvent]
+ * @param {string} [options.targetRel]
+ * @param {string} [options.fixturePath]
  */
 export async function simulateKaneRun(options) {
-  const { cwd, onEvent } = options;
-  const targetRel =
-    process.env.KIRO_HEAL_TARGET ?? 'demo/public/js/main.js';
-  const targetPath = path.join(cwd, targetRel);
+  const { cwd, onEvent, targetRel, fixturePath } = options;
+  const fixture = await loadFixture(cwd, fixturePath);
+  const rel = targetRel ?? process.env.KIRO_HEAL_TARGET ?? fixture.target ?? 'demo/public/js/main.js';
+  const targetPath = path.isAbsolute(rel) ? rel : path.join(cwd, rel);
 
   let source = '';
   try {
@@ -21,50 +24,61 @@ export async function simulateKaneRun(options) {
     source = '';
   }
 
-  const isBroken =
-    source.includes('cta-primary-broken') ||
-    source.includes('HEAL_BROKEN') ||
-    !source.includes('getElementById(\'cta-primary\')') &&
-      !source.includes('getElementById("cta-primary")');
+  const verdict = evaluateFixture(source, fixture);
+  const steps = fixture.steps?.length
+    ? fixture.steps
+    : [
+        { remark: 'Opened application', pass: true },
+        { remark: 'Primary navigation visible', pass: true },
+        { remark: 'Primary interaction', failRemark: 'Interaction failed' },
+      ];
 
   const state = createAccumulator();
-
   const emit = (obj) => {
     ingestEvent(state, obj);
     onEvent?.(obj);
   };
 
-  await delay(300);
-  emit({ step: 1, status: 'passed', remark: 'Opened http://localhost:3000' });
-  await delay(200);
-  emit({ step: 2, status: 'passed', remark: 'Primary navigation visible' });
-  await delay(200);
-
-  if (isBroken) {
+  await delay(80);
+  let failed = false;
+  let stepNum = 1;
+  for (const step of steps) {
+    const shouldFail = Boolean(verdict.broken && step.failRemark);
+    if (shouldFail) {
+      emit({
+        step: stepNum,
+        status: 'failed',
+        remark: step.failRemark,
+      });
+      failed = true;
+      break;
+    }
     emit({
-      step: 3,
-      status: 'failed',
-      remark: 'Get started button did not update status — click handler not wired',
+      step: stepNum,
+      status: 'passed',
+      remark: step.remark,
     });
-    await delay(150);
+    stepNum += 1;
+    await delay(40);
+  }
+
+  if (failed || verdict.broken) {
     emit({
       type: 'run_end',
       status: 'failed',
-      summary: 'CTA interaction failed — element selector or handler regression',
-      reason: 'Step 3 failed',
-      duration: 2.1,
+      summary: verdict.reason,
+      reason: 'Fixture checks failed',
+      duration: 0.4,
     });
     return { ...finalizeAccumulator(state, 1), exitCode: 1 };
   }
 
-  emit({ step: 3, status: 'passed', remark: 'Get started updated status banner' });
-  await delay(150);
   emit({
     type: 'run_end',
     status: 'passed',
-    summary: 'Smoke flow passed — home, nav, and CTA verified',
+    summary: 'Smoke flow passed — fixture checks succeeded',
     reason: 'Objective completed',
-    duration: 2.4,
+    duration: 0.4,
   });
   return { ...finalizeAccumulator(state, 0), exitCode: 0 };
 }

@@ -1,0 +1,13 @@
+{
+  "target": "demo/public/js/main.js",
+  "failIfAny": ["cta-primary-broken", "HEAL_BROKEN"],
+  "passIfAny": ["getElementById('cta-primary')", "getElementById(\"cta-primary\")"],
+  "steps": [
+    { "remark": "Opened application", "pass": true },
+    { "remark": "Primary navigation visible", "pass": true },
+    {
+      "remark": "Primary CTA interaction",
+      "failRemark": "Get started button did not update status — click handler not wired"
+    }
+  ]
+}

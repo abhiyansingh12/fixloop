@@ -1,6 +1,6 @@
 export { createStreamParser, parseLine, formatFailureBlock } from './parser.js';
-export { runKaneTest, logKaneEvent } from './runner.js';
-export { healFile, healLoop, buildHealPrompt } from './healer.js';
+export { runKaneTest, logKaneEvent, resolveKaneBin } from './runner.js';
+export { healFile, healLoop, buildHealPrompt, extractCodeFromResponse } from './healer.js';
 export {
   scanRoutes,
   scaffoldTest,
@@ -8,6 +8,7 @@ export {
   scanStaticPages,
   discoverFlows,
   detectFramework,
+  fileToRoute,
 } from './scanner.js';
 export { verifyGitHubRepository } from './github/verify.js';
 export { startGitHubWebhookServer } from './github/server.js';
@@ -36,3 +37,8 @@ export {
   healSyntaxError,
   syntaxHealPipeline,
 } from './syntax-healer.js';
+export { assertHealPathAllowed, matchGlob, DEFAULT_HEAL_ALLOWLIST } from './allowlist.js';
+export { applyUnifiedDiff, applyHealContent, looksLikeUnifiedDiff } from './patch.js';
+export { evaluateFixture, loadFixture, DEFAULT_FIXTURE } from './fixture.js';
+export { pickStartPlan, inferPortFromScript } from './github/detect.js';
+export { detectPackageManager } from './github/clone.js';

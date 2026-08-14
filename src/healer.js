@@ -10,20 +10,26 @@ import {
   shouldOpenAutomatedPr,
   STABLE_AUTO_FIX_BRANCH,
 } from './policy.js';
+import { assertHealPathAllowed, DEFAULT_HEAL_ALLOWLIST } from './allowlist.js';
+import { applyHealContent } from './patch.js';
 
 /**
  * Build the Kiro isolation prompt from failure trace + source.
  */
 export function buildHealPrompt(filePath, sourceCode, failureBlock) {
-  return `CRITICAL REGRESSION DETECTED IN LOCAL APPLICATON
+  return `CRITICAL REGRESSION DETECTED IN LOCAL APPLICATION
 Source File: ${filePath}
+
 Current Code:
 ${sourceCode}
 
 Kane CLI Browser Verification Failure Trace:
 ${failureBlock}
 
-Objective: Rewrite the source file to fix the specific interaction, layout, or behavioral bug highlighted by the verification trace. Maintain all other functional logic. Return only valid code.`;
+Objective: Fix only the interaction, layout, or behavioral bug in the trace.
+Prefer a unified diff (--- a/${filePath} / +++ b/${filePath} with @@ hunks).
+If a diff is not practical, return the complete corrected file in one fenced code block.
+Do not modify unrelated logic, secrets, or files.`;
 }
 
 /**
@@ -69,7 +75,7 @@ export async function requestKiroFix(prompt) {
         {
           role: 'system',
           content:
-            'You are a precise code repair agent. Output only the full corrected source file with no explanation.',
+            'You are a precise code repair agent. Prefer a unified diff. If you must rewrite, output only the full corrected source file.',
         },
         { role: 'user', content: prompt },
       ],
@@ -124,31 +130,41 @@ export async function requestFix(absPath, sourceCode, parseResult, prompt) {
  * @param {object} options
  */
 export async function healFile(options) {
-  const { filePath, repoRoot, parseResult, attempt = 1 } = options;
-  const absPath = path.isAbsolute(filePath) ? filePath : path.join(repoRoot, filePath);
+  const { filePath, repoRoot, parseResult, attempt = 1, allowlist, healTarget } = options;
+  const { abs, rel } = assertHealPathAllowed(
+    repoRoot,
+    filePath,
+    allowlist ?? DEFAULT_HEAL_ALLOWLIST,
+    undefined,
+    healTarget,
+  );
 
   let sourceCode;
   try {
-    sourceCode = await fs.readFile(absPath, 'utf8');
+    sourceCode = await fs.readFile(abs, 'utf8');
   } catch (err) {
-    throw new Error(`Cannot read source file ${absPath}: ${err.message}`);
+    throw new Error(`Cannot read source file ${abs}: ${err.message}`);
   }
 
   const failureBlock = formatFailureBlock(parseResult);
-  const prompt = buildHealPrompt(absPath, sourceCode, failureBlock);
+  const prompt = buildHealPrompt(rel, sourceCode, failureBlock);
 
-  console.log(`[kiro-heal] healing ${path.relative(repoRoot, absPath)} (attempt ${attempt})…`);
+  console.log(`[kiro-heal] healing ${rel} (attempt ${attempt})…`);
 
   if (process.env.KIRO_HEAL_DRY_RUN === '1') {
     console.log('[kiro-heal] dry-run: skipping file write');
-    return { filePath: absPath, healed: false };
+    return { filePath: abs, healed: false };
   }
 
-  const fixedCode = await requestFix(absPath, sourceCode, parseResult, prompt);
-  await fs.writeFile(absPath, fixedCode, 'utf8');
-  console.log(`[kiro-heal] wrote healed file: ${path.relative(repoRoot, absPath)}`);
+  const incoming = await requestFix(abs, sourceCode, parseResult, prompt);
+  const fixedCode = applyHealContent(sourceCode, incoming);
+  if (!fixedCode || !String(fixedCode).trim()) {
+    throw new Error('Heal produced an empty file — refusing to write');
+  }
+  await fs.writeFile(abs, fixedCode, 'utf8');
+  console.log(`[kiro-heal] wrote healed file: ${rel}`);
 
-  return { filePath: absPath, healed: true };
+  return { filePath: abs, healed: true };
 }
 
 /**
@@ -295,7 +311,15 @@ export async function createSelfHealedPR({
  * Closed-loop: run → fail → heal → re-run until pass or max heal cycles.
  * On success, opens a PR only when KIRO_HEAL_OPEN_PR=1 and GitHub credentials are set.
  */
-export async function healLoop({ runTest, resolveTarget, repoRoot, maxHealAttempts = 5, github }) {
+export async function healLoop({
+  runTest,
+  resolveTarget,
+  repoRoot,
+  maxHealAttempts = 5,
+  github,
+  allowlist,
+  healTarget,
+}) {
   let healCount = 0;
   let lastResult = null;
   let lastHealedTarget = null;
@@ -354,6 +378,8 @@ export async function healLoop({ runTest, resolveTarget, repoRoot, maxHealAttemp
       repoRoot,
       parseResult: lastResult,
       attempt: healCount + 1,
+      allowlist,
+      healTarget,
     });
     lastHealedTarget = target;
     healCount += 1;

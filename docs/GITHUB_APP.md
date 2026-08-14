@@ -23,6 +23,8 @@ The bot reuses a single `kiro-heal/verify` branch (and an existing open bot PR) 
 
 Automated PRs from the **local** CLI/watchdog are off unless `KIRO_HEAL_OPEN_PR=1`.
 
+Cloned repos get a full `npm ci` / `pnpm install` / `yarn install` (devDependencies included). The boot command prefers `package.json` scripts `dev` → `start` → `preview` → `serve`, and rewrites `--port` to an ephemeral port. See [SECURITY.md](../SECURITY.md).
+
 ## 1. Create a GitHub App
 
 1. GitHub → **Settings** → **Developer settings** → **GitHub Apps** → **New GitHub App**

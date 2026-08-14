@@ -2,104 +2,37 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveChatCompletionsUrl } from './policy.js';
+import {
+  extractRouterPaths,
+  fileToRoute,
+  scanHtmlTree,
+  walkFiles,
+} from './routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = path.join(__dirname, '..', 'templates');
 
-const ROUTE_PATTERNS = [
-  { framework: 'next-app', glob: /app\/(.+)\/page\.(tsx|jsx|js)$/ },
-  { framework: 'next-pages', glob: /pages\/(.+)\.(tsx|jsx|js)$/ },
-  { framework: 'vite-react', glob: /src\/pages\/(.+)\.(tsx|jsx)$/ },
-];
-
-const IGNORE_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  '.next',
-  'coverage',
-  'output-',
-  '.testmuai',
-]);
-
-const MAX_SCAN_FILES = 4000;
+export { fileToRoute } from './routes.js';
 
 /**
- * Walk directory tree (shallow-safe for hackathon repos).
- * @param {string} dir
- * @param {string[]} [files]
- */
-async function walk(dir, files = []) {
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return files;
-  }
-
-  for (const ent of entries) {
-    if (IGNORE_DIRS.has(ent.name) || ent.name.startsWith('output-')) continue;
-    const full = path.join(dir, ent.name);
-    if (ent.isDirectory()) {
-      await walk(full, files);
-    } else if (/\.(tsx|jsx|js|ts)$/.test(ent.name)) {
-      files.push(full);
-      if (files.length >= MAX_SCAN_FILES) return files;
-    }
-  }
-  return files;
-}
-
-/**
- * Map file path to a public URL route.
- * @param {string} repoRoot
- * @param {string} filePath
- */
-export function fileToRoute(repoRoot, filePath) {
-  const rel = path.relative(repoRoot, filePath).replace(/\\/g, '/');
-
-  for (const { glob } of ROUTE_PATTERNS) {
-    const m = rel.match(glob);
-    if (!m) continue;
-    let segment = m[1];
-    if (segment === 'index') return '/';
-    if (segment.endsWith('/index')) segment = segment.slice(0, -6);
-    return `/${segment}`;
-  }
-
-  return null;
-}
-
-/**
- * Static HTML pages under demo/public (or any public/).
+ * Static HTML pages under demo/public, public/, and nested folders.
  * @param {string} repoRoot
  */
 export async function scanStaticPages(repoRoot) {
-  const routes = [];
   const candidates = [
     path.join(repoRoot, 'demo/public'),
     path.join(repoRoot, 'public'),
+    path.join(repoRoot, 'static'),
   ];
-
+  const routes = [];
+  const seen = new Set();
   for (const dir of candidates) {
-    let entries;
-    try {
-      entries = await fs.readdir(dir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (!name.endsWith('.html')) continue;
-      const route = name === 'index.html' ? '/' : `/${name.replace(/\.html$/, '')}`;
-      routes.push({
-        route,
-        file: path.relative(repoRoot, path.join(dir, name)),
-        kind: 'static',
-      });
+    for (const r of await scanHtmlTree(dir, repoRoot)) {
+      if (seen.has(r.route)) continue;
+      seen.add(r.route);
+      routes.push(r);
     }
   }
-
   return routes;
 }
 
@@ -108,23 +41,41 @@ export async function scanStaticPages(repoRoot) {
  * @param {string} repoRoot
  */
 export async function scanRoutes(repoRoot) {
-  const files = await walk(repoRoot);
+  const files = await walkFiles(repoRoot, (name) =>
+    /\.(tsx|jsx|js|ts|vue|svelte)$/.test(name),
+  );
   const routes = [];
   const seen = new Set();
 
+  const add = (route, file, kind) => {
+    if (!route || seen.has(route)) return;
+    seen.add(route);
+    routes.push({ route, file, kind });
+  };
+
   for (const file of files) {
+    const rel = path.relative(repoRoot, file);
     const route = fileToRoute(repoRoot, file);
-    if (route && !seen.has(route)) {
-      seen.add(route);
-      routes.push({ route, file: path.relative(repoRoot, file), kind: 'framework' });
+    if (route) add(route, rel, 'framework');
+  }
+
+  for (const file of files) {
+    if (!/\.(tsx|jsx|js|ts)$/.test(file)) continue;
+    let source = '';
+    try {
+      source = await fs.readFile(file, 'utf8');
+    } catch {
+      continue;
+    }
+    if (!source.includes('path:') && !source.includes('<Route')) continue;
+    const rel = path.relative(repoRoot, file);
+    for (const route of extractRouterPaths(source)) {
+      add(route, rel, 'react-router');
     }
   }
 
   for (const r of await scanStaticPages(repoRoot)) {
-    if (!seen.has(r.route)) {
-      seen.add(r.route);
-      routes.push(r);
-    }
+    add(r.route, r.file, r.kind);
   }
 
   return routes.sort((a, b) => a.route.localeCompare(b.route));
@@ -293,26 +244,24 @@ export async function loadBaseTemplate() {
 }
 
 /**
- * Scan repo and write a Kane testmd file.
- * @param {object} options
- * @param {string} options.repoRoot
- * @param {string} options.outputPath
- * @param {string} [options.baseUrl]
- * @param {boolean} [options.useLlm]
- */
-/**
- * Detect likely web framework from repository layout.
+ * Detect likely web framework from repository layout and package.json.
  * @param {string} repoRoot
  */
 export async function detectFramework(repoRoot) {
   const checks = [
     { name: 'next', path: 'next.config.js' },
     { name: 'next', path: 'next.config.mjs' },
+    { name: 'next', path: 'next.config.ts' },
     { name: 'vite', path: 'vite.config.ts' },
     { name: 'vite', path: 'vite.config.js' },
+    { name: 'vite', path: 'vite.config.mts' },
     { name: 'remix', path: 'remix.config.js' },
+    { name: 'remix', path: 'remix.config.ts' },
     { name: 'nuxt', path: 'nuxt.config.ts' },
+    { name: 'nuxt', path: 'nuxt.config.js' },
     { name: 'sveltekit', path: 'svelte.config.js' },
+    { name: 'astro', path: 'astro.config.mjs' },
+    { name: 'astro', path: 'astro.config.ts' },
   ];
   for (const { name, path: rel } of checks) {
     try {
@@ -322,6 +271,21 @@ export async function detectFramework(repoRoot) {
       // continue
     }
   }
+
+  try {
+    const pkg = JSON.parse(await fs.readFile(path.join(repoRoot, 'package.json'), 'utf8'));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    if (deps.next) return 'next';
+    if (deps.nuxt) return 'nuxt';
+    if (deps['@remix-run/node'] || deps['@remix-run/react']) return 'remix';
+    if (deps['@sveltejs/kit']) return 'sveltekit';
+    if (deps.astro) return 'astro';
+    if (deps.vite) return 'vite';
+    if (deps['react-router'] || deps['react-router-dom']) return 'react-router';
+  } catch {
+    // no package.json
+  }
+
   try {
     await fs.access(path.join(repoRoot, 'demo/server.js'));
     return 'static-demo';

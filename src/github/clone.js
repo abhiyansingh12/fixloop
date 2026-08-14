@@ -22,6 +22,27 @@ function run(cmd, args, opts = {}) {
   });
 }
 
+async function exists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {string} repoRoot
+ */
+export async function detectPackageManager(repoRoot) {
+  if (await exists(path.join(repoRoot, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (await exists(path.join(repoRoot, 'yarn.lock'))) return 'yarn';
+  if (await exists(path.join(repoRoot, 'bun.lockb')) || await exists(path.join(repoRoot, 'bun.lock'))) {
+    return 'bun';
+  }
+  return 'npm';
+}
+
 /**
  * Shallow clone into workDir. Token is passed via http.extraHeader so it
  * does not appear in the remote URL or `ps` argument list.
@@ -63,26 +84,27 @@ export async function cloneRepository(opts) {
 }
 
 /**
+ * Install production *and* dev dependencies — `next`/`vite` live in devDependencies.
  * @param {string} repoRoot
  */
 export async function installDependencies(repoRoot) {
-  try {
-    await fs.access(path.join(repoRoot, 'package.json'));
-  } catch {
-    return;
-  }
-  const lock = path.join(repoRoot, 'package-lock.json');
-  let hasLock = false;
-  try {
-    await fs.access(lock);
-    hasLock = true;
-  } catch {
-    // no lock
-  }
+  if (!(await exists(path.join(repoRoot, 'package.json')))) return;
 
-  const args = hasLock ? ['ci', '--omit=dev'] : ['install', '--omit=dev'];
+  const pm = await detectPackageManager(repoRoot);
+  /** @type {Record<string, [string, string[]]>} */
+  const commands = {
+    npm: [
+      'npm',
+      (await exists(path.join(repoRoot, 'package-lock.json'))) ? ['ci'] : ['install'],
+    ],
+    pnpm: ['pnpm', ['install', '--frozen-lockfile']],
+    yarn: ['yarn', ['install', '--frozen-lockfile']],
+    bun: ['bun', ['install']],
+  };
+
+  const [cmd, args] = commands[pm] ?? commands.npm;
   try {
-    await run('npm', args, { cwd: repoRoot, stdio: 'pipe' });
+    await run(cmd, args, { cwd: repoRoot, stdio: 'pipe' });
   } catch {
     await run('npm', ['install'], { cwd: repoRoot, stdio: 'pipe' });
   }

@@ -105,7 +105,7 @@ export async function waitForHttp(url, maxMs = 15000) {
   while (Date.now() - start < maxMs) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-      if (res.ok) return true;
+      if (res.status < 500) return true;
     } catch {
       // retry
     }
@@ -129,6 +129,8 @@ export function createRunTestFn(opts) {
       cwd: opts.repoRoot,
       timeoutSeconds: opts.config.kaneTimeout,
       onEvent: logKaneEvent,
+      targetRel: opts.config.healTarget,
+      fixturePath: opts.config.fixtureFile,
       onRaw: (chunk, stream) => {
         if (process.env.KIRO_HEAL_VERBOSE === '1') process[stream].write(chunk);
       },
@@ -178,6 +180,8 @@ export async function runPipeline(opts) {
     maxHealAttempts: config.maxHeal,
     runTest,
     resolveTarget: async () => target,
+    allowlist: config.healAllowlist,
+    healTarget: config.healTarget,
   });
 }
 

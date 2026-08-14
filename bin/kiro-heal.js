@@ -28,7 +28,7 @@ import { syntaxHealPipeline } from '../src/syntax-healer.js';
 const cli = new Cli({
   binaryLabel: 'kiro-heal',
   binaryName: 'kiro-heal',
-  binaryVersion: '0.1.1',
+  binaryVersion: '0.2.0',
 });
 
 function repoRootFrom(dir) {
@@ -176,6 +176,7 @@ class WatchCommand extends Command {
             cwd: repoRoot,
             timeoutSeconds,
             onEvent: logKaneEvent,
+            targetRel: healTarget,
           });
 
         if (enableHeal) {
@@ -184,6 +185,8 @@ class WatchCommand extends Command {
             maxHealAttempts: maxHeal,
             runTest,
             resolveTarget: async () => lastChangedFile,
+            allowlist: config.healAllowlist,
+            healTarget,
           });
           if (!outcome.passed) process.exitCode = 1;
         } else {
