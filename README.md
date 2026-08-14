@@ -117,7 +117,7 @@ See [`.env.example`](.env.example). `FIXLOOP_*` is canonical; `KIRO_HEAL_*` is r
 
 [`fixloop@1.0.0`](https://www.npmjs.com/package/fixloop) is on npm.
 
-Later versions: [docs/PUBLISH.md](docs/PUBLISH.md). Add GitHub secret `NPM_TOKEN`, turn on Trusted Publisher for workflow `publish.yml`, then cut a GitHub Release (`v1.0.1`, …).
+Later versions: [docs/PUBLISH.md](docs/PUBLISH.md). Turn on Trusted Publisher for workflow `publish.yml` (Allow npm publish), then cut a GitHub Release (`v1.0.1`, …). No `NPM_TOKEN` needed on that path.
 
 ## License
 
