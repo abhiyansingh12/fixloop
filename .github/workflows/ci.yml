@@ -34,3 +34,10 @@ jobs:
           FIXLOOP_SIMULATE: '1'
           FIXLOOP_OPEN_PR: '0'
         run: npm test
+
+      - name: Coverage
+        if: matrix.node == '22'
+        env:
+          FIXLOOP_OPEN_PR: '0'
+          FIXLOOP_SIMULATE: '1'
+        run: node --test --experimental-test-coverage test/*.test.js

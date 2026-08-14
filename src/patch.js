@@ -37,6 +37,48 @@ export function applyUnifiedDiff(original, diffText) {
 }
 
 /**
+ * Split a multi-file unified diff into `{ path, body }` entries.
+ * @param {string} diffText
+ * @returns {{ path: string, body: string }[]}
+ */
+export function splitUnifiedDiffByFile(diffText) {
+  const body = unwrapFence(diffText);
+  const files = [];
+  /** @type {{ path: string, lines: string[] }|null} */
+  let current = null;
+
+  const flush = () => {
+    if (current?.path) files.push({ path: current.path, body: current.lines.join('\n') });
+    current = null;
+  };
+
+  for (const line of body.split('\n')) {
+    const git = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    if (git) {
+      flush();
+      current = { path: git[2], lines: [line] };
+      continue;
+    }
+    const minus = line.match(/^--- (?:a\/)?(.+)$/);
+    if (minus && !line.startsWith('--- /dev/null')) {
+      if (!current) current = { path: minus[1], lines: [] };
+      else if (!current.path) current.path = minus[1];
+      current.lines.push(line);
+      continue;
+    }
+    const plus = line.match(/^\+\+\+ (?:b\/)?(.+)$/);
+    if (plus) {
+      if (current && plus[1] !== '/dev/null') current.path = plus[1];
+      current?.lines.push(line);
+      continue;
+    }
+    if (current) current.lines.push(line);
+  }
+  flush();
+  return files;
+}
+
+/**
  * @param {string} original
  * @param {string} incoming
  */

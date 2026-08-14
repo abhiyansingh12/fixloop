@@ -11,7 +11,7 @@ import { shouldOpenAutomatedPr, STABLE_AUTO_FIX_BRANCH } from './policy.js';
 import { envOn } from './flags.js';
 import { postComment } from './github/pr.js';
 import { createGitHubClient } from './github/api.js';
-import { redactSecrets } from './secrets.js';
+import { resolveHealTargets } from './heal-targets.js';
 
 const DEFAULT_KANE = 'kane-cli';
 
@@ -164,12 +164,17 @@ export async function runPipeline(opts) {
     return { passed: false, triage, healCount: 0, verified: false, lastResult: first };
   }
 
-  const target = opts.targetOverride ?? paths.healTarget;
   const healOutcome = await healLoop({
     repoRoot,
     maxHealAttempts: config.maxHeal,
     runTest,
-    resolveTarget: async () => target,
+    resolveTargets: async (result) =>
+      resolveHealTargets({
+        repoRoot,
+        config,
+        oracleResult: result,
+        override: opts.targetOverride,
+      }),
     allowlist: config.healAllowlist,
     healTarget: config.healTarget,
     skipInitialRun: true,
@@ -184,6 +189,13 @@ export async function runPipeline(opts) {
   log('[fixloop] ✓ re-run passed after patch');
 
   if (healOutcome.healCount > 0 && shouldOpenAutomatedPr()) {
+    const targets = resolveHealTargets({
+      repoRoot,
+      config,
+      oracleResult: healOutcome.lastResult,
+      override: opts.targetOverride,
+    });
+    const target = targets[0] ?? paths.healTarget;
     const pr = await openVerifiedDraftPr({
       repoRoot,
       target,

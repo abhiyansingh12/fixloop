@@ -4,14 +4,9 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { extractJsonDocument, parsePlaywrightJson } from './playwright-report.js';
 import { env } from './flags.js';
+import { assertSafeSpawnBin, splitArgv } from './argv.js';
 
 export { parsePlaywrightJson, extractJsonDocument } from './playwright-report.js';
-
-function splitCommand(command) {
-  const raw = String(command ?? 'npx playwright test').trim();
-  const parts = raw.split(/\s+/).filter(Boolean);
-  return { bin: parts[0] ?? 'npx', args: parts.slice(1) };
-}
 
 /**
  * @param {string} cwd
@@ -45,7 +40,8 @@ export async function runPlaywright(opts) {
     return parsePlaywrightJson(json);
   }
 
-  const { bin, args } = splitCommand(opts.command ?? env('PLAYWRIGHT_COMMAND', 'npx playwright test'));
+  const { bin, args } = splitArgv(opts.command ?? env('PLAYWRIGHT_COMMAND', 'npx playwright test'));
+  assertSafeSpawnBin(bin);
   if (!args.some((a) => String(a).includes('reporter'))) {
     args.push('--reporter=json');
   }

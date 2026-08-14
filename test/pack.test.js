@@ -25,6 +25,7 @@ describe('npm pack', () => {
   it('declares no runtime dependencies', () => {
     const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
     assert.equal(pkg.dependencies, undefined);
-    assert.equal(pkg.exports['.'], './src/index.js');
+    assert.equal(pkg.exports['.'].import, './src/index.js');
+    assert.equal(pkg.types, './index.d.ts');
   });
 });

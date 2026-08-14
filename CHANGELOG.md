@@ -7,6 +7,9 @@
 - Action outputs: `triage`, `verified`, `passed`, `healed`
 - Template pins `abhiyansingh12/fixloop@v1.0.1` instead of `@main`
 - Timeouts on UI assertions against application code are `product_regression`, not `flake`
+- Heal targets come from config **and** Playwright stacks; multi-file unified diffs apply per allowlisted file
+- Playwright `--command` is argv-only (no shell)
+- Public TypeScript types (`index.d.ts`); CodeQL on `main`
 - CI on Node 18 and 22; `node --check` on every JS file
 - Maintainer-only docs removed from the public tree and npm tarball
 

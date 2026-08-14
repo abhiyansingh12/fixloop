@@ -72,7 +72,8 @@ A Next app is the same shape: point `healTarget` at `app/page.tsx` (or `src/app/
 ## Limits
 
 - Triage is heuristic. A timeout with no UI assertion is still a flake.
-- Healing usually targets one file (`healTarget`). It will not refactor a whole app.
+- Healing can write more than one allowlisted file when the model returns a multi-file diff, or when the Playwright stack names application files
+- Playwright is spawned as argv (no shell). `;&|$` in `--command` is rejected
 - Local heals cover known patterns; a generation API is optional.
 - The Action must run in a workflow that already installed the app and Playwright.
 

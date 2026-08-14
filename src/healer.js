@@ -10,8 +10,10 @@ import {
   STABLE_AUTO_FIX_BRANCH,
 } from './policy.js';
 import { assertHealPathAllowed, DEFAULT_HEAL_ALLOWLIST } from './allowlist.js';
-import { applyHealContent } from './patch.js';
+import { applyHealContent, splitUnifiedDiffByFile } from './patch.js';
 import { assertSafeApiUrl, looksLikeSecretMaterial, redactSecrets } from './secrets.js';
+
+const MAX_HEAL_BYTES = 512 * 1024;
 
 /**
  * Build the repair prompt from failure trace + source.
@@ -149,6 +151,10 @@ export async function healFile(options) {
     throw new Error(`Cannot read source file ${abs}: ${err.message}`);
   }
 
+  if (Buffer.byteLength(sourceCode) > MAX_HEAL_BYTES) {
+    throw new Error(`Refusing to heal ${rel}: file exceeds ${MAX_HEAL_BYTES} bytes`);
+  }
+
   const failureBlock = formatFailureBlock(parseResult);
   if (looksLikeSecretMaterial(sourceCode)) {
     throw new Error(
@@ -165,6 +171,32 @@ export async function healFile(options) {
   }
 
   const incoming = await requestFix(abs, sourceCode, parseResult, prompt);
+  const parts = looksLikeMultiFileDiff(incoming);
+  if (parts.length > 1) {
+    const written = [];
+    for (const part of parts) {
+      const allowed = assertHealPathAllowed(
+        repoRoot,
+        part.path,
+        allowlist ?? DEFAULT_HEAL_ALLOWLIST,
+        undefined,
+        healTarget,
+      );
+      const current = await fs.readFile(allowed.abs, 'utf8');
+      if (looksLikeSecretMaterial(current)) continue;
+      if (Buffer.byteLength(current) > MAX_HEAL_BYTES) continue;
+      const next = applyHealContent(current, part.body);
+      if (!next || !String(next).trim()) continue;
+      await fs.writeFile(allowed.abs, next, 'utf8');
+      console.log(`[fixloop] wrote healed file: ${allowed.rel}`);
+      written.push(allowed.abs);
+    }
+    if (!written.length) {
+      throw new Error('Heal produced no allowed file writes');
+    }
+    return { filePath: abs, healed: true, files: written };
+  }
+
   const fixedCode = applyHealContent(sourceCode, incoming);
   if (!fixedCode || !String(fixedCode).trim()) {
     throw new Error('Heal produced an empty file — refusing to write');
@@ -172,7 +204,12 @@ export async function healFile(options) {
   await fs.writeFile(abs, fixedCode, 'utf8');
   console.log(`[fixloop] wrote healed file: ${rel}`);
 
-  return { filePath: abs, healed: true };
+  return { filePath: abs, healed: true, files: [abs] };
+}
+
+function looksLikeMultiFileDiff(incoming) {
+  if (!incoming || typeof incoming !== 'string') return [];
+  return splitUnifiedDiffByFile(incoming);
 }
 
 /**
@@ -320,6 +357,7 @@ export async function createSelfHealedPR({
  */
 export async function healLoop({
   runTest,
+  resolveTargets,
   resolveTarget,
   repoRoot,
   maxHealAttempts = 5,
@@ -348,8 +386,10 @@ export async function healLoop({
       return { passed: true, healCount, lastResult, attempts: healCount + 1 };
     }
 
-    const target = await resolveTarget();
-    if (!target) {
+    const targets = resolveTargets
+      ? await resolveTargets(lastResult)
+      : [await resolveTarget?.()].filter(Boolean);
+    if (!targets.length) {
       console.error(
         '[fixloop] test failed but no heal target. Set healTarget in .fixloop.json or --target.',
       );
@@ -361,14 +401,16 @@ export async function healLoop({
       return { passed: false, healCount, lastResult, attempts: healCount + 1 };
     }
 
-    await healFile({
-      filePath: target,
-      repoRoot,
-      parseResult: lastResult,
-      attempt: healCount + 1,
-      allowlist,
-      healTarget,
-    });
+    for (const filePath of targets) {
+      await healFile({
+        filePath,
+        repoRoot,
+        parseResult: lastResult,
+        attempt: healCount + 1,
+        allowlist,
+        healTarget,
+      });
+    }
     healCount += 1;
   }
 }

@@ -9,8 +9,12 @@
   },
   "main": "./src/index.js",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.js"
+    }
   },
+  "types": "./index.d.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/abhiyansingh12/fixloop.git"
@@ -28,7 +32,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "index.d.ts"
   ],
   "scripts": {
     "start": "node bin/fixloop.js start",

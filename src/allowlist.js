@@ -119,7 +119,11 @@ export function assertHealPathAllowed(
   }
 
   const extra = [];
-  if (healTarget) extra.push(healTarget.replace(/\\/g, '/'));
+  if (Array.isArray(healTarget)) {
+    extra.push(...healTarget.map((t) => String(t).replace(/\\/g, '/')));
+  } else if (healTarget) {
+    extra.push(String(healTarget).replace(/\\/g, '/'));
+  }
   const allowed = [...allowlist, ...extra];
   if (allowed.length > 0 && !matchesAny(rel, allowed) && !allowed.includes(rel)) {
     throw new Error(
