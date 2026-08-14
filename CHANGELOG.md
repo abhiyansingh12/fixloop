@@ -2,8 +2,8 @@
 
 ## 1.0.2
 
-- npm publish from GitHub Actions uses npm 11 + OIDC (Trusted Publisher). Empty `NODE_AUTH_TOKEN` no longer blocks auth.
-- Release workflow fails if the Git tag does not match `package.json` version.
+- npm publish from GitHub Actions uses Node 24 + npm 11.5+ OIDC (Trusted Publisher). The empty `_authToken` written by `setup-node` is stripped so publish does not fail with `ENEEDAUTH`.
+- Release / version tags must match `package.json`. Pushing `v*` tags also publishes (so a moved tag can retry without a new GitHub Release).
 
 ## 1.0.1
 
