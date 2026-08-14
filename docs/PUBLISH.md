@@ -1,6 +1,6 @@
 # Publish fixloop to npm
 
-There is no compile step. The package is ESM JavaScript. `npm publish` packs `bin/`, `src/`, `action.yml`, and docs. Tests run first (`prepublishOnly`).
+There is no compile step. The package is ESM JavaScript. `npm publish` packs `bin/`, `src/`, `action.yml`, and `templates`. Tests run first (`prepublishOnly`). Maintainer notes in `docs/` stay on GitHub and are not in the npm tarball.
 
 Do **not** put an npm token in the repo, in a workflow file, or in a chat. If a token was pasted anywhere, revoke it on npm (**Access Tokens → Delete**). You do not need a replacement token if Trusted Publisher is set up.
 
