@@ -45,7 +45,10 @@ npm test
 Break the click handler in `examples/vite-app/src/main.js`, then from the repo root:
 
 ```bash
-npm install github:abhiyansingh12/fixloop   # or: npm install -g fixloop after publish
+```bash
+npm install -g fixloop
+# until 1.0.0 is on npm:
+# npm install github:abhiyansingh12/fixloop
 npx fixloop run --dir examples/vite-app --command "npx playwright test"
 ```
 
@@ -113,7 +116,11 @@ Kane is optional: `oracle: "kane"` in `.fixloop.json`, or `FIXLOOP_ORACLE=kane`.
 
 See [`.env.example`](.env.example). `FIXLOOP_*` is canonical; `KIRO_HEAL_*` is read for one release.
 
-To publish the npm package, add `NPM_TOKEN` to repo secrets and create a GitHub Release.
+## Publish to npm
+
+Step-by-step: [docs/PUBLISH.md](docs/PUBLISH.md).
+
+Short version: first publish from your laptop with `--otp=` (npm 2FA). Then add a **new** granular token as GitHub secret `NPM_TOKEN`, turn on Trusted Publisher for workflow `publish.yml`, and cut a GitHub Release (`v1.0.1`, …) to publish later versions.
 
 ## License
 

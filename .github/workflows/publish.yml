@@ -3,6 +3,7 @@ name: Publish npm package
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Test
+      - name: Unit + pipeline tests
         env:
           KIRO_HEAL_SIMULATE_KANE: '1'
           KIRO_HEAL_OPEN_PR: '0'

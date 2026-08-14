@@ -4,8 +4,8 @@
   "description": "Triage red Playwright runs. Only product_regression may write code. Re-run must be green before a draft PR.",
   "type": "module",
   "bin": {
-    "fixloop": "./bin/fixloop.js",
-    "kiro-heal": "./bin/kiro-heal.js"
+    "fixloop": "bin/fixloop.js",
+    "kiro-heal": "bin/kiro-heal.js"
   },
   "main": "./src/index.js",
   "repository": {
@@ -53,7 +53,8 @@
   ],
   "license": "MIT",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "peerDependencies": {
     "@playwright/test": ">=1.40.0",
