@@ -9,9 +9,15 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('npm pack', () => {
   it('ships the Action, CLI, and src — not maintainer docs or examples', () => {
-    const out = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: root, encoding: 'utf8' });
+    const out = execFileSync('npm', ['pack', '--dry-run', '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, npm_config_loglevel: 'error' }
+    });
     const jsonStart = out.indexOf('[');
-    const packed = JSON.parse(out.slice(jsonStart));
+    const jsonEnd = out.lastIndexOf(']');
+    assert.ok(jsonStart >= 0 && jsonEnd > jsonStart, 'npm pack --json should print an array');
+    const packed = JSON.parse(out.slice(jsonStart, jsonEnd + 1));
     const files = packed[0].files.map((f) => f.path).sort();
     assert.ok(files.includes('action.yml'));
     assert.ok(files.includes('bin/fixloop.js'));
